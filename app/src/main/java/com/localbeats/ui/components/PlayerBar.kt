@@ -1,7 +1,6 @@
 package com.localbeats.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -29,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,12 +65,6 @@ fun PlayerBar(
                     )
                 )
             )
-            .graphicsLayer {
-                shadowElevation = 8f
-                shape = glassShape
-                clip = true
-                alpha = 0.95f
-            }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -44,9 +45,8 @@ fun CoverWithReflection(
                 .height(100.dp)
                 .graphicsLayer {
                     rotationX = 180f
-                    alpha = 0.3f
-                    translationY = 0f
                 }
+                .alpha(0.3f)
                 .drawWithContent {
                     drawRect(
                         brush = Brush.verticalGradient(

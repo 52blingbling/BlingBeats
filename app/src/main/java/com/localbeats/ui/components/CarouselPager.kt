@@ -10,8 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -34,8 +34,8 @@ fun CarouselItem(
 ) {
     val absOffset = abs(pageOffset)
     val scale = 1f - (absOffset * 0.15f).coerceIn(0f, 0.3f)
-    val rotationY = pageOffset * -25f
-    val alpha = 1f - (absOffset * 0.4f).coerceIn(0f, 0.5f)
+    val tilt = pageOffset * -25f
+    val itemAlpha = 1f - (absOffset * 0.4f).coerceIn(0f, 0.5f)
 
     Box(
         modifier = modifier
@@ -44,10 +44,10 @@ fun CarouselItem(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                this.rotationY = rotationY
-                this.alpha = alpha
+                rotationY = tilt
                 cameraDistance = 12f * density
             }
+            .alpha(itemAlpha)
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -65,6 +65,7 @@ fun CarouselItem(
                 .clip(RoundedCornerShape(16.dp))
         )
 
+        val reflectionAlpha = (0.3f * (1f - absOffset)).coerceIn(0f, 0.3f)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -72,7 +73,7 @@ fun CarouselItem(
                 .graphicsLayer {
                     rotationX = 180f
                 }
-                .alpha((0.3f * (1f - absOffset)).coerceIn(0f, 0.3f)),
+                .alpha(reflectionAlpha),
             contentAlignment = Alignment.TopCenter
         ) {
             AsyncImage(
@@ -92,7 +93,7 @@ fun CarouselItem(
 
         Text(
             text = track.title,
-            color = Color.White.copy(alpha = alpha.coerceIn(0.6f, 1f)),
+            color = Color.White.copy(alpha = itemAlpha.coerceIn(0.6f, 1f)),
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
