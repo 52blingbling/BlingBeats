@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -70,8 +71,8 @@ fun CarouselItem(
                 .height(280.dp)
                 .graphicsLayer {
                     rotationX = 180f
-                    alpha = (0.3f * (1f - absOffset)).coerceIn(0f, 0.3f)
-                },
+                }
+                .alpha((0.3f * (1f - absOffset)).coerceIn(0f, 0.3f)),
             contentAlignment = Alignment.TopCenter
         ) {
             AsyncImage(
