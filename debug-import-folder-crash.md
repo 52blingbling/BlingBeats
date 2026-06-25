@@ -29,9 +29,32 @@
 
 ## 进度记录
 - [2026-06-25] 初始化调试会话，列出 5 个假设
-- [2026-06-25] 完成 4 个文件插桩：
-  - LocalBeatsApp：全局未捕获异常处理器 + Dbg 文件日志工具
-  - MainActivity：folderPicker、onCreate、crash-safe 路径
-  - MusicViewModel：loadMusicFromFolder 各阶段 + CoroutineExceptionHandler
-  - MusicRepository：扫描循环、每个文件、setDataSource、buildTrack
-- [2026-06-25] 等待用户构建安装 APK、复现崩溃、获取 debug.log
+- [2026-06-25] 完成 4 个文件插桩
+- [2026-06-25] 获取到 debug.log，根因确认：
+
+## 根因确认
+日志显示扫描流程完全正常（root exists=true isDir=true），随后主线程在 `CircularProgressIndicator` 渲染时崩溃：
+```
+java.lang.NoSuchMethodError: No virtual method at(...) in KeyframesSpec$KeyframesSpecConfig
+at androidx.compose.material3.ProgressIndicatorKt$CircularProgressIndicator$endAngle$1.invoke(ProgressIndicator.kt:371)
+at com.localbeats.MainActivityKt.MusicApp(MainActivity.kt:231)
+```
+
+**根因**：Compose BOM `2024.01.00` 解析出的 `animation-core` 与 `material3` 版本不匹配。Material3 1.2+ 的 `CircularProgressIndicator` 新签名调用了 `KeyframesSpecConfig.at()`，但打包进 APK 的 animation-core 版本里没有该方法。
+
+**假设验证**：
+- H1-H5 全部否定（与中文名、文件扫描、协程、UI OOM、saveCoverArt 均无关）
+- 真实根因：依赖版本冲突（BOM 与 material3 新 API 不匹配）
+
+**症状解释**：
+- 中文文件夹有歌曲 → isLoading=true 触发 CircularProgressIndicator 渲染 → 崩溃
+- 空文件夹 → 扫描快但仍短暂进入 isLoading=true → 崩溃
+- 后续每次启动 → 已保存 URI 直接走加载流程 → 又触发崩溃
+
+## 最小修复
+`app/build.gradle.kts`：Compose BOM 升级 `2024.01.00` → `2024.02.00`
+- material3 1.1.2 → 1.2.0
+- animation-core 1.5.x → 1.6.1
+- 版本匹配，NoSuchMethodError 消失
+
+等待用户验证。
