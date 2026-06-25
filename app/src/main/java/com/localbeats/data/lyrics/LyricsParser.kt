@@ -52,7 +52,7 @@ object LyricsParser {
                     fracStr.isEmpty() -> 0L
                     fracStr.length == 1 -> (fracStr.toIntOrNull() ?: 0) * 100L
                     fracStr.length == 2 -> (fracStr.toIntOrNull() ?: 0) * 10L
-                    else -> fracStr.take(3).toIntOrNull() ?: 0
+                    else -> (fracStr.take(3).toIntOrNull() ?: 0).toLong()
                 }
                 val totalMs = minutes * 60_000L + seconds * 1000L + ms
                 result.add(LyricLine(totalMs, lyricText))

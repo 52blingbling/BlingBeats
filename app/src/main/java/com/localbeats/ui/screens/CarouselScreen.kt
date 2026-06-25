@@ -92,7 +92,7 @@ fun CarouselScreen(
                 // 不使用 contentPadding peek，改用 translationX 实现真正的堆叠
                 contentPadding = PaddingValues(horizontal = 0.dp),
                 // 预渲染左右各 2 页，保证堆叠邻居可见
-                beyondViewportPageCount = 2
+                beyondBoundsPageCount = 2
             ) { page ->
                 val track = tracks[page]
                 // pageOffset：当前页相对此页的偏移。左侧页 pageOffset > 0，右侧页 < 0
