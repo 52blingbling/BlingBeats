@@ -52,20 +52,26 @@ object LyricsExtractor {
                 Log.w(TAG, "AudioFileIO.read 失败: ${t.javaClass.simpleName}: ${t.message}")
                 return null
             }
-            val tag = audioFile.tagOrNull
+            // jaudiotagger 2.2.3 的 AudioFile.getTag() 在无 tag 时抛异常或返回 null，统一用 try/catch 处理
+            val tag = try {
+                audioFile.tag
+            } catch (t: Throwable) {
+                Log.w(TAG, "读取 tag 失败: ${t.message}")
+                null
+            }
             if (tag == null) {
                 Log.w(TAG, "无 tag: $uri")
                 return null
             }
 
             // 主路径：LYRICS 字段（jaudiotagger 抽象后的统一字段，覆盖 ID3 USLT / iTunes ©lyr / FLAC LYRICS）
-            val primary = try {
+            val primary: String? = try {
                 tag.getFirst(FieldKey.LYRICS)
             } catch (t: Throwable) {
                 Log.w(TAG, "getFirst(LYRICS) 异常: ${t.message}")
                 null
             }
-            if (!primary.isNullOrBlank()) {
+            if (primary != null && primary.isNotBlank()) {
                 Log.i(TAG, "提取到歌词（LYRICS字段），长度=${primary.length}")
                 return cleanLyrics(primary)
             }
