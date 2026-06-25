@@ -38,17 +38,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.localbeats.data.model.MusicTrack
 
-// 为每首歌生成一个基于 id 的独特渐变色，作为封面占位符
-private val placeholderPalettes = listOf(
-    listOf(Color(0xFF6A1B9A), Color(0xFF1565C0)),
-    listOf(Color(0xFF00695C), Color(0xFF1565C0)),
-    listOf(Color(0xFF4A148C), Color(0xFFAD1457)),
-    listOf(Color(0xFF0D47A1), Color(0xFF00838F)),
-    listOf(Color(0xFF37474F), Color(0xFF6A1B9A)),
-    listOf(Color(0xFF880E4F), Color(0xFF4A148C)),
-    listOf(Color(0xFF1B5E20), Color(0xFF006064)),
-    listOf(Color(0xFFBF360C), Color(0xFF4E342E)),
-)
+
 
 @Composable
 fun TileItem(
