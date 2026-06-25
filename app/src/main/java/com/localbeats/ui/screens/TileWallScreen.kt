@@ -41,9 +41,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.awaitEachGesture
-import androidx.compose.ui.input.pointer.awaitFirstDown
-import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -130,7 +127,8 @@ fun TileWallScreen(
             }
             // 自定义手势识别：短按拖动 → 平移磁贴墙；长按后拖动 → 拖动磁贴交换位置
             .pointerInput(Unit) {
-                awaitEachGesture {
+                while (true) {
+                    awaitPointerEventScope {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val downPosition = down.position
                     val downTime = System.currentTimeMillis()
@@ -240,6 +238,7 @@ fun TileWallScreen(
                         draggedIndex = null
                         dragOffsetX = 0f
                         dragOffsetY = 0f
+                    }
                     }
                 }
             }
