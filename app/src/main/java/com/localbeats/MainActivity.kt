@@ -3,9 +3,11 @@ package com.localbeats
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import com.localbeats.Dbg
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -71,34 +73,45 @@ class MainActivity : ComponentActivity() {
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
+        Dbg.log("[MAIN] folderPicker callback uri=$uri")
         if (uri != null) {
             // 尝试获取持久化读写权限，失败则降级为只读，再失败则放弃
             try {
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(uri, flags)
+                Dbg.log("[MAIN] takePersistableUriPermission RW OK")
             } catch (e: SecurityException) {
+                Dbg.err("[MAIN] RW permission failed, trying RO", e)
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    Dbg.log("[MAIN] takePersistableUriPermission RO OK")
                 } catch (e2: SecurityException) {
+                    Dbg.err("[MAIN] RO permission also failed, abort", e2)
                     return@registerForActivityResult
                 }
             }
             selectedFolderUri = uri
             saveSelectedFolder(uri)
+            Dbg.log("[MAIN] saved folder, selectedFolderUri=$selectedFolderUri")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Dbg.log("[MAIN] onCreate")
 
         // 崩溃恢复机制：如果上次加载时崩溃，清除保存的 URI，让用户重新选择
         if (wasLoadingCrashed()) {
+            Dbg.log("[MAIN] wasLoadingCrashed=true, clearing folder")
             clearSelectedFolder()
             clearCrashFlag()
             selectedFolderUri = null
         } else {
-            selectedFolderUri = restoreSelectedFolder()?.also { uri ->
+            val restored = restoreSelectedFolder()
+            Dbg.log("[MAIN] wasLoadingCrashed=false, restored=$restored")
+            selectedFolderUri = restored?.also { uri ->
                 if (!isUriPermissionValid(uri)) {
+                    Dbg.log("[MAIN] restored URI permission invalid, clearing")
                     selectedFolderUri = null
                     clearSelectedFolder()
                 }
@@ -198,6 +211,7 @@ fun MusicApp(
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
     LaunchedEffect(selectedFolderUri) {
+        Dbg.log("[UI] LaunchedEffect selectedFolderUri=$selectedFolderUri")
         if (selectedFolderUri != null) {
             viewModel.loadMusicFromFolder(selectedFolderUri)
         } else {

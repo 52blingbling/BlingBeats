@@ -3,46 +3,60 @@ package com.localbeats.data.repository
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.localbeats.Dbg
 import com.localbeats.data.model.MusicTrack
 import java.util.ArrayDeque
 
 class MusicRepository(private val context: Context) {
 
+    #region debug-point repo-1
     fun loadMusicTracksFromFolder(folderUri: Uri?): List<MusicTrack> {
+        Dbg.log("[REPO] loadMusicTracksFromFolder START uri=$folderUri")
         if (folderUri == null) {
+            Dbg.log("[REPO] folderUri is null, return empty")
             return emptyList()
         }
 
         val root = try {
-            DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
-        } catch (_: Throwable) {
+            val r = DocumentFile.fromTreeUri(context, folderUri)
+            Dbg.log("[REPO] root=${r?.uri} exists=${r?.exists()} isDir=${r?.isDirectory}")
+            r ?: return emptyList()
+        } catch (t: Throwable) {
+            Dbg.err("[REPO] fromTreeUri threw", t)
             return emptyList()
         }
         val tracks = mutableListOf<MusicTrack>()
         val stack = ArrayDeque<DocumentFile>()
         stack.add(root)
+        var scanCount = 0
 
         while (stack.isNotEmpty()) {
             val current = stack.removeFirst()
             try {
                 if (current.isDirectory) {
-                    current.listFiles().forEach { child -> stack.add(child) }
+                    val children = current.listFiles()
+                    Dbg.log("[REPO] dir=${current.name} children=${children.size}")
+                    children.forEach { child -> stack.add(child) }
                 } else if (isSupportedAudioFile(current.name.orEmpty())) {
-                    // 每个文件单独 try/catch，一个文件失败不影响其他文件
+                    scanCount++
+                    Dbg.log("[REPO] file#${scanCount} name=${current.name}")
                     try {
                         tracks.add(buildTrack(current))
-                    } catch (_: Throwable) {
-                        // 跳过无法解析的文件
+                    } catch (t: Throwable) {
+                        Dbg.err("[REPO] buildTrack failed name=${current.name}", t)
                     }
                 }
-            } catch (_: Throwable) {
-                // 跳过无法访问的目录/文件
+            } catch (t: Throwable) {
+                Dbg.err("[REPO] iter failed name=${current.name}", t)
             }
         }
 
+        Dbg.log("[REPO] DONE scanned=$scanCount tracks=${tracks.size}")
         return tracks.sortedBy { it.title.lowercase() }
     }
+    #endregion
 
     private fun buildTrack(documentFile: DocumentFile): MusicTrack {
         val uri = documentFile.uri
@@ -54,22 +68,24 @@ class MusicRepository(private val context: Context) {
         var albumArtUri: Uri? = null
 
         try {
+            Dbg.log("[REPO] setDataSource uri=$uri")
             retriever.setDataSource(context, uri)
+            Dbg.log("[REPO] setDataSource OK")
             duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
             artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown"
 
-            // 提取内嵌封面图并缓存到应用私有目录
             val embeddedPicture = retriever.embeddedPicture
             if (embeddedPicture != null) {
+                Dbg.log("[REPO] cover bytes=${embeddedPicture.size}")
                 albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
             }
-        } catch (_: Throwable) {
-            // 捕获 Throwable 包括原生崩溃引发的 Error
+        } catch (t: Throwable) {
+            Dbg.err("[REPO] buildTrack setDataSource failed name=$rawName", t)
         } finally {
             try {
                 retriever.release()
-            } catch (_: Throwable) {
-                // release 失败时忽略
+            } catch (t: Throwable) {
+                Dbg.err("[REPO] retriever.release failed", t)
             }
         }
 

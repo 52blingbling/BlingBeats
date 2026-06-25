@@ -2,11 +2,14 @@ package com.localbeats.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.localbeats.Dbg
 import com.localbeats.data.model.MusicTrack
 import com.localbeats.data.player.MusicPlayer
 import com.localbeats.data.repository.MusicRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,32 +54,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val crashHandler = CoroutineExceptionHandler { _, throwable ->
+        Dbg.err("[VM] coroutine uncaught", throwable)
+    }
+
     fun loadMusicFromFolder(folderUri: Uri?) {
+        Dbg.log("[VM] loadMusicFromFolder START uri=$folderUri")
         // 在主线程同步设置崩溃标记，确保在任何崩溃前写入
         prefs.edit().putBoolean("loading_crashed", true).commit()
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + crashHandler) {
             try {
                 _isLoading.value = true
+                Dbg.log("[VM] calling repository...")
                 val musicTracks = try {
                     repository.loadMusicTracksFromFolder(folderUri)
-                } catch (_: Throwable) {
-                    // 捕获 Throwable 而非 Exception，包括 OutOfMemoryError 等
+                } catch (t: Throwable) {
+                    Dbg.err("[VM] repository threw", t)
                     emptyList()
                 }
+                Dbg.log("[VM] repository returned ${musicTracks.size} tracks")
                 _tracks.value = musicTracks
                 // ExoPlayer 必须在主线程操作
                 withContext(Dispatchers.Main) {
                     try {
+                        Dbg.log("[VM] setPlaylist...")
                         player.setPlaylist(musicTracks)
-                    } catch (_: Throwable) {
-                        // ExoPlayer 设置播放列表失败时忽略
+                        Dbg.log("[VM] setPlaylist OK")
+                    } catch (t: Throwable) {
+                        Dbg.err("[VM] setPlaylist threw", t)
                     }
                 }
                 _isLoading.value = false
             } finally {
-                // 无论成功、失败还是取消，都清除崩溃标记
-                // （仅原生崩溃导致的进程被杀才会保留标记）
+                Dbg.log("[VM] loadMusicFromFolder FINALLY")
                 prefs.edit().putBoolean("loading_crashed", false).commit()
             }
         }
