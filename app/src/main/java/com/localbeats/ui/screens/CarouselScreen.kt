@@ -21,7 +21,7 @@ import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
 import kotlinx.coroutines.flow.collectLatest
 
-@OptIn androidx.compose.foundation.ExperimentalFoundationApi::class
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CarouselScreen(
     tracks: List<MusicTrack>,
