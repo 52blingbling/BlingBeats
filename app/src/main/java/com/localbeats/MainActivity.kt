@@ -1,18 +1,23 @@
 package com.localbeats
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +28,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.localbeats.ui.screens.CarouselScreen
 import com.localbeats.ui.screens.TileGridScreen
@@ -32,54 +36,62 @@ import com.localbeats.viewmodel.MusicViewModel
 
 class MainActivity : ComponentActivity() {
 
-    private var hasPermission by mutableStateOf(false)
+    private var selectedFolderUri by mutableStateOf<Uri?>(null)
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasPermission = permissions.values.all { it }
-        if (hasPermission) {
-            // Reload music after permission granted
+    private val folderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, flags)
+            selectedFolderUri = uri
+            saveSelectedFolder(uri)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkAndRequestPermissions()
+        selectedFolderUri = restoreSelectedFolder()
 
         setContent {
             LocalBeatsTheme {
-                if (hasPermission) {
-                    MusicApp()
+                val viewModel: MusicViewModel = viewModel()
+                if (selectedFolderUri == null) {
+                    ImportFolderScreen(onSelectFolder = ::pickMusicFolder)
                 } else {
-                    PermissionScreen { checkAndRequestPermissions() }
+                    MusicApp(
+                        viewModel = viewModel,
+                        selectedFolderUri = selectedFolderUri,
+                        onImportFolderClick = ::pickMusicFolder
+                    )
                 }
             }
         }
     }
 
-    private fun checkAndRequestPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+    private fun pickMusicFolder() {
+        folderPickerLauncher.launch(null)
+    }
 
-        val allGranted = permissions.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
+    private fun saveSelectedFolder(uri: Uri) {
+        getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+            .edit()
+            .putString("selected_folder_uri", uri.toString())
+            .apply()
+    }
 
-        if (allGranted) {
-            hasPermission = true
-        } else {
-            permissionLauncher.launch(permissions)
-        }
+    private fun restoreSelectedFolder(): Uri? {
+        val storedValue = getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+            .getString("selected_folder_uri", null) ?: return null
+        return Uri.parse(storedValue)
     }
 }
 
 @Composable
 fun MusicApp(
-    viewModel: MusicViewModel = viewModel()
+    viewModel: MusicViewModel,
+    selectedFolderUri: Uri?,
+    onImportFolderClick: () -> Unit
 ) {
     val tracks by viewModel.tracks.collectAsState()
     val currentTrack by viewModel.player.currentTrack.collectAsState()
@@ -88,12 +100,22 @@ fun MusicApp(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
+    LaunchedEffect(selectedFolderUri) {
+        if (selectedFolderUri != null) {
+            viewModel.loadMusicFromFolder(selectedFolderUri)
+        } else {
+            viewModel.clearTracks()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading) {
             CircularProgressIndicator(
                 color = Color(0xFFBB86FC),
                 modifier = Modifier.align(Alignment.Center)
             )
+        } else if (tracks.isEmpty()) {
+            ImportFolderScreen(onSelectFolder = onImportFolderClick)
         } else if (isLandscape) {
             CarouselScreen(
                 tracks = tracks,
@@ -115,16 +137,29 @@ fun MusicApp(
 }
 
 @Composable
-fun PermissionScreen(onRequestPermission: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun ImportFolderScreen(onSelectFolder: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "LocalBeats needs access to your music files",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 16.sp,
-            modifier = Modifier.padding(horizontal = 32.dp)
+            text = "选择音乐文件夹导入",
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 20.sp,
+            modifier = Modifier.padding(bottom = 16.dp)
         )
+        Text(
+            text = "请选择一个包含音乐文件的文件夹，LocalBeats 会扫描其中的音频文件并加载到播放列表。",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = onSelectFolder) {
+            Text(text = "选择文件夹")
+        }
     }
 }

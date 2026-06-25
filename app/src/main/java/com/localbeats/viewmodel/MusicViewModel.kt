@@ -1,6 +1,7 @@
 package com.localbeats.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.localbeats.data.model.MusicTrack
@@ -20,21 +21,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _tracks = MutableStateFlow<List<MusicTrack>>(emptyList())
     val tracks: StateFlow<List<MusicTrack>> = _tracks.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(true)
+    private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    init {
-        loadMusic()
-    }
-
-    private fun loadMusic() {
+    fun loadMusicFromFolder(folderUri: Uri?) {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            val musicTracks = repository.loadMusicTracks()
+            val musicTracks = try {
+                repository.loadMusicTracksFromFolder(folderUri)
+            } catch (_: Exception) {
+                emptyList()
+            }
             _tracks.value = musicTracks
             player.setPlaylist(musicTracks)
             _isLoading.value = false
         }
+    }
+
+    fun clearTracks() {
+        _tracks.value = emptyList()
+        player.setPlaylist(emptyList())
     }
 
     fun playTrack(track: MusicTrack) {
