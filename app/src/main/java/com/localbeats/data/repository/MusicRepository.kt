@@ -14,17 +14,30 @@ class MusicRepository(private val context: Context) {
             return emptyList()
         }
 
-        val root = DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
+        val root = try {
+            DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
+        } catch (_: Throwable) {
+            return emptyList()
+        }
         val tracks = mutableListOf<MusicTrack>()
         val stack = ArrayDeque<DocumentFile>()
         stack.add(root)
 
         while (stack.isNotEmpty()) {
             val current = stack.removeFirst()
-            if (current.isDirectory) {
-                current.listFiles().forEach { child -> stack.add(child) }
-            } else if (isSupportedAudioFile(current.name.orEmpty())) {
-                tracks.add(buildTrack(current))
+            try {
+                if (current.isDirectory) {
+                    current.listFiles().forEach { child -> stack.add(child) }
+                } else if (isSupportedAudioFile(current.name.orEmpty())) {
+                    // 每个文件单独 try/catch，一个文件失败不影响其他文件
+                    try {
+                        tracks.add(buildTrack(current))
+                    } catch (_: Throwable) {
+                        // 跳过无法解析的文件
+                    }
+                }
+            } catch (_: Throwable) {
+                // 跳过无法访问的目录/文件
             }
         }
 
@@ -50,10 +63,14 @@ class MusicRepository(private val context: Context) {
             if (embeddedPicture != null) {
                 albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
             }
-        } catch (_: Exception) {
-            // fall back to defaults when metadata cannot be read
+        } catch (_: Throwable) {
+            // 捕获 Throwable 包括原生崩溃引发的 Error
         } finally {
-            retriever.release()
+            try {
+                retriever.release()
+            } catch (_: Throwable) {
+                // release 失败时忽略
+            }
         }
 
         return MusicTrack(

@@ -72,8 +72,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            contentResolver.takePersistableUriPermission(uri, flags)
+            // 尝试获取持久化读写权限，失败则降级为只读，再失败则放弃
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: SecurityException) {
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e2: SecurityException) {
+                    return@registerForActivityResult
+                }
+            }
             selectedFolderUri = uri
             saveSelectedFolder(uri)
         }
@@ -81,10 +90,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        selectedFolderUri = restoreSelectedFolder()?.also { uri ->
-            if (!isUriPermissionValid(uri)) {
-                selectedFolderUri = null
-                clearSelectedFolder()
+
+        // 崩溃恢复机制：如果上次加载时崩溃，清除保存的 URI，让用户重新选择
+        if (wasLoadingCrashed()) {
+            clearSelectedFolder()
+            clearCrashFlag()
+            selectedFolderUri = null
+        } else {
+            selectedFolderUri = restoreSelectedFolder()?.also { uri ->
+                if (!isUriPermissionValid(uri)) {
+                    selectedFolderUri = null
+                    clearSelectedFolder()
+                }
             }
         }
 
@@ -118,16 +135,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun saveSelectedFolder(uri: Uri) {
+        // 使用 commit() 同步写入，确保即使随后崩溃 URI 也能被保存
         getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .edit()
             .putString("selected_folder_uri", uri.toString())
-            .apply()
+            .commit()
     }
 
     private fun restoreSelectedFolder(): Uri? {
         val storedValue = getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .getString("selected_folder_uri", null) ?: return null
-        return Uri.parse(storedValue)
+        return try {
+            Uri.parse(storedValue)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun isUriPermissionValid(uri: Uri): Boolean {
@@ -143,7 +165,20 @@ class MainActivity : ComponentActivity() {
         getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .edit()
             .remove("selected_folder_uri")
-            .apply()
+            .commit()
+    }
+
+    /** 崩溃检测：在开始加载前设置标记，加载完成后清除。如果应用崩溃，标记会保留。 */
+    private fun clearCrashFlag() {
+        getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+            .edit()
+            .putBoolean("loading_crashed", false)
+            .commit()
+    }
+
+    private fun wasLoadingCrashed(): Boolean {
+        return getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+            .getBoolean("loading_crashed", false)
     }
 }
 

@@ -31,17 +31,23 @@ class MusicPlayer(context: Context) {
     private var currentIndex = -1
     // 标记当前是否应该自动播放（setPlaylist 时不自动播放，play(track) 时才播）
     private var shouldAutoPlay = false
+    // 连续错误计数，防止 onPlayerError → playNext → onPlayerError 无限循环
+    private var consecutiveErrorCount = 0
+    private val maxConsecutiveErrors = 3
 
     @OptIn(UnstableApi::class)
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
+                    // 成功进入 READY 状态，重置错误计数
+                    consecutiveErrorCount = 0
                     if (shouldAutoPlay) {
                         exoPlayer.play()
                     }
                 }
                 Player.STATE_ENDED -> {
+                    consecutiveErrorCount = 0
                     playNext()
                 }
                 Player.STATE_BUFFERING -> {}
@@ -54,8 +60,16 @@ class MusicPlayer(context: Context) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            // 出错时跳过当前曲目
-            playNext()
+            consecutiveErrorCount++
+            if (consecutiveErrorCount <= maxConsecutiveErrors) {
+                // 出错时跳过当前曲目
+                playNext()
+            } else {
+                // 连续错误次数过多，停止播放，避免无限循环
+                consecutiveErrorCount = 0
+                shouldAutoPlay = false
+                exoPlayer.stop()
+            }
         }
     }
 
@@ -70,6 +84,7 @@ class MusicPlayer(context: Context) {
         _playlist.value = tracks
         currentIndex = -1
         shouldAutoPlay = false
+        consecutiveErrorCount = 0
         if (tracks.isNotEmpty()) {
             currentIndex = 0
             prepareTrack(tracks[0])
@@ -95,6 +110,7 @@ class MusicPlayer(context: Context) {
             0
         }
         shouldAutoPlay = true
+        consecutiveErrorCount = 0
         prepareTrack(track)
     }
 
