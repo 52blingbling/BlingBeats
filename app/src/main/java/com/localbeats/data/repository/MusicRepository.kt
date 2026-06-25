@@ -33,15 +33,23 @@ class MusicRepository(private val context: Context) {
 
     private fun buildTrack(documentFile: DocumentFile): MusicTrack {
         val uri = documentFile.uri
-        val title = documentFile.name?.removeSuffix(getFileExtension(documentFile.name.orEmpty())) ?: "Unknown"
+        val rawName = documentFile.name ?: "Unknown"
+        val title = rawName.removeSuffix(getFileExtension(rawName))
         val retriever = MediaMetadataRetriever()
         var duration = 0L
         var artist = "Unknown"
+        var albumArtUri: Uri? = null
 
         try {
             retriever.setDataSource(context, uri)
             duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
             artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown"
+
+            // 提取内嵌封面图并缓存到应用私有目录
+            val embeddedPicture = retriever.embeddedPicture
+            if (embeddedPicture != null) {
+                albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
+            }
         } catch (_: Exception) {
             // fall back to defaults when metadata cannot be read
         } finally {
@@ -54,9 +62,26 @@ class MusicRepository(private val context: Context) {
             artist = artist.ifBlank { "Unknown" },
             duration = duration,
             uri = uri,
-            coverUri = null,
+            coverUri = albumArtUri,
             filePath = uri.toString()
         )
+    }
+
+    /**
+     * 将封面图字节写入应用私有缓存目录，返回文件 Uri。
+     * 文件名用曲目 id hash 确保唯一且不重复写入。
+     */
+    private fun saveCoverArt(trackId: String, data: ByteArray): Uri? {
+        return try {
+            val cacheDir = java.io.File(context.cacheDir, "covers").also { it.mkdirs() }
+            val file = java.io.File(cacheDir, "$trackId.jpg")
+            if (!file.exists()) {
+                file.writeBytes(data)
+            }
+            Uri.fromFile(file)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun isSupportedAudioFile(fileName: String): Boolean {

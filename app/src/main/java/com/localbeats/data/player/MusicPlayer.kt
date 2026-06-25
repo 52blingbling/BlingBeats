@@ -29,13 +29,17 @@ class MusicPlayer(context: Context) {
     val playlist: StateFlow<List<MusicTrack>> = _playlist.asStateFlow()
 
     private var currentIndex = -1
+    // 标记当前是否应该自动播放（setPlaylist 时不自动播放，play(track) 时才播）
+    private var shouldAutoPlay = false
 
     @OptIn(UnstableApi::class)
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
-                    _isPlaying.value = true
+                    if (shouldAutoPlay) {
+                        exoPlayer.play()
+                    }
                 }
                 Player.STATE_ENDED -> {
                     playNext()
@@ -50,6 +54,7 @@ class MusicPlayer(context: Context) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            // 出错时跳过当前曲目
             playNext()
         }
     }
@@ -59,10 +64,18 @@ class MusicPlayer(context: Context) {
     }
 
     fun setPlaylist(tracks: List<MusicTrack>) {
+        // 重置播放列表时先停止当前播放
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
         _playlist.value = tracks
-        if (tracks.isNotEmpty() && currentIndex < 0) {
+        currentIndex = -1
+        shouldAutoPlay = false
+        if (tracks.isNotEmpty()) {
             currentIndex = 0
             prepareTrack(tracks[0])
+        } else {
+            _currentTrack.value = null
+            _isPlaying.value = false
         }
     }
 
@@ -76,19 +89,20 @@ class MusicPlayer(context: Context) {
 
     fun play(track: MusicTrack) {
         val tracks = _playlist.value
-        currentIndex = tracks.indexOf(track)
-        if (currentIndex < 0) {
-            currentIndex = 0
+        val idx = tracks.indexOf(track)
+        currentIndex = if (idx >= 0) idx else {
             _playlist.value = listOf(track)
+            0
         }
+        shouldAutoPlay = true
         prepareTrack(track)
-        exoPlayer.play()
     }
 
     fun togglePlayPause() {
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()
         } else {
+            shouldAutoPlay = true
             exoPlayer.play()
         }
     }
@@ -97,16 +111,16 @@ class MusicPlayer(context: Context) {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
         currentIndex = (currentIndex + 1) % tracks.size
+        shouldAutoPlay = true
         prepareTrack(tracks[currentIndex])
-        exoPlayer.play()
     }
 
     fun playPrevious() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
         currentIndex = if (currentIndex > 0) currentIndex - 1 else tracks.size - 1
+        shouldAutoPlay = true
         prepareTrack(tracks[currentIndex])
-        exoPlayer.play()
     }
 
     fun seekTo(position: Long) {

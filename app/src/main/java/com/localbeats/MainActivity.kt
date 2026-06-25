@@ -6,26 +6,56 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -61,9 +91,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             LocalBeatsTheme {
                 val viewModel: MusicViewModel = viewModel()
-                if (selectedFolderUri == null) {
+                AnimatedVisibility(
+                    visible = selectedFolderUri == null,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
                     ImportFolderScreen(onSelectFolder = ::pickMusicFolder)
-                } else {
+                }
+                AnimatedVisibility(
+                    visible = selectedFolderUri != null,
+                    enter = fadeIn(tween(400)),
+                    exit = fadeOut()
+                ) {
                     MusicApp(
                         viewModel = viewModel,
                         selectedFolderUri = selectedFolderUri,
@@ -118,6 +157,8 @@ fun MusicApp(
     val currentTrack by viewModel.player.currentTrack.collectAsState()
     val isPlaying by viewModel.player.isPlaying.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val currentPosition by viewModel.currentPosition.collectAsState()
+    val duration by viewModel.duration.collectAsState()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
 
@@ -131,10 +172,26 @@ fun MusicApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading) {
-            CircularProgressIndicator(
-                color = Color(0xFFBB86FC),
-                modifier = Modifier.align(Alignment.Center)
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0D0D0D)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = Color(0xFFBB86FC),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "正在扫描音乐文件...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp
+                    )
+                }
+            }
         } else if (tracks.isEmpty()) {
             ImportFolderScreen(onSelectFolder = onImportFolderClick)
         } else if (isLandscape) {
@@ -143,7 +200,12 @@ fun MusicApp(
                 currentTrack = currentTrack,
                 isPlaying = isPlaying,
                 onTrackClick = { viewModel.playTrack(it) },
-                onPlayPauseClick = { viewModel.togglePlayPause() }
+                onPlayPauseClick = { viewModel.togglePlayPause() },
+                onPreviousClick = { viewModel.playPrevious() },
+                onNextClick = { viewModel.playNext() },
+                currentPosition = currentPosition,
+                duration = duration,
+                onSeek = { viewModel.seekTo(it) }
             )
         } else {
             TileGridScreen(
@@ -151,7 +213,13 @@ fun MusicApp(
                 currentTrack = currentTrack,
                 isPlaying = isPlaying,
                 onTrackClick = { viewModel.playTrack(it) },
-                onPlayPauseClick = { viewModel.togglePlayPause() }
+                onPlayPauseClick = { viewModel.togglePlayPause() },
+                onPreviousClick = { viewModel.playPrevious() },
+                onNextClick = { viewModel.playNext() },
+                currentPosition = currentPosition,
+                duration = duration,
+                onSeek = { viewModel.seekTo(it) },
+                onImportClick = onImportFolderClick
             )
         }
     }
@@ -159,28 +227,198 @@ fun MusicApp(
 
 @Composable
 fun ImportFolderScreen(onSelectFolder: () -> Unit) {
-    Column(
+    val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
+
+    // 背景光晕动画
+    val haloScale by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "halo"
+    )
+    val haloAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "halo_alpha"
+    )
+
+    // 图标脉冲
+    val iconPulse by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "icon_pulse"
+    )
+
+    // 按钮交互
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = tween(100),
+        label = "btn_scale"
+    )
+
+    // 内容淡入
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(Color(0xFF0D0D0D)),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "选择音乐文件夹导入",
-            color = Color.White.copy(alpha = 0.9f),
-            fontSize = 20.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
+        // 背景光晕
+        Box(
+            modifier = Modifier
+                .size(320.dp)
+                .scale(haloScale)
+                .alpha(haloAlpha)
+                .blur(80.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF6A1B9A).copy(alpha = 0.6f),
+                            Color(0xFF1565C0).copy(alpha = 0.3f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
         )
-        Text(
-            text = "请选择一个包含音乐文件的文件夹，LocalBeats 会扫描其中的音频文件并加载到播放列表。",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(horizontal = 16.dp)
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .scale(1.1f - haloScale * 0.05f)
+                .alpha(haloAlpha * 0.8f)
+                .blur(60.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF03DAC6).copy(alpha = 0.4f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
         )
-        Spacer(modifier = Modifier.height(20.dp))
-        Button(onClick = onSelectFolder) {
-            Text(text = "选择文件夹")
+
+        // 主内容
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { it / 3 },
+                animationSpec = tween(600, easing = FastOutSlowInEasing)
+            ) + fadeIn(tween(600)),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(horizontal = 40.dp)
+            ) {
+                // 图标容器
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(iconPulse)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFFBB86FC), Color(0xFF03DAC6))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(52.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Text(
+                    text = "LocalBeats",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    style = androidx.compose.ui.text.TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFFBB86FC), Color(0xFF03DAC6))
+                        )
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "你的本地音乐播放器",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "选择一个文件夹，我们会扫描其中\n所有支持的音频文件",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(40.dp))
+
+                // 选择文件夹按钮
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .scale(buttonScale)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFFBB86FC), Color(0xFF7C4DFF))
+                            )
+                        )
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onSelectFolder
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "选择音乐文件夹",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "支持 MP3 · M4A · FLAC · WAV · OGG · AAC",
+                    color = Color.White.copy(alpha = 0.3f),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
