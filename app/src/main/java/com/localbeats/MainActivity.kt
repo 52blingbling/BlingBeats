@@ -51,7 +51,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        selectedFolderUri = restoreSelectedFolder()
+        selectedFolderUri = restoreSelectedFolder()?.also { uri ->
+            if (!isUriPermissionValid(uri)) {
+                selectedFolderUri = null
+                clearSelectedFolder()
+            }
+        }
 
         setContent {
             LocalBeatsTheme {
@@ -84,6 +89,22 @@ class MainActivity : ComponentActivity() {
         val storedValue = getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .getString("selected_folder_uri", null) ?: return null
         return Uri.parse(storedValue)
+    }
+
+    private fun isUriPermissionValid(uri: Uri): Boolean {
+        return try {
+            val persisted = contentResolver.getPersistedUriPermissions()
+            persisted.any { it.uri == uri && it.isReadPermission }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun clearSelectedFolder() {
+        getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+            .edit()
+            .remove("selected_folder_uri")
+            .apply()
     }
 }
 
