@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -129,15 +130,21 @@ fun TileWallScreen(
             .pointerInput(Unit) {
                 while (true) {
                     awaitPointerEventScope {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val downPosition = down.position
+                    // 等待第一个按下事件（兼容方案，不依赖 awaitFirstDown 扩展函数）
+                    var down: PointerInputChange? = null
+                    while (down == null) {
+                        val initEvent = awaitPointerEvent()
+                        down = initEvent.changes.firstOrNull { it.pressed }
+                    }
+                    val downChange = down
+                    val downPosition = downChange.position
                     val downTime = System.currentTimeMillis()
                     var isPanning = false
                     var consumedAsDrag = false
 
                     while (true) {
                         val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val change = event.changes.firstOrNull { it.id == downChange.id } ?: break
                         if (!change.pressed) break
 
                         val dx = change.position.x - downPosition.x
