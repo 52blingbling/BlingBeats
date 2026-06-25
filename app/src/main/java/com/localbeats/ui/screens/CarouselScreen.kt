@@ -3,11 +3,8 @@ package com.localbeats.ui.screens
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
@@ -19,10 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.localbeats.data.model.MusicTrack
 import com.localbeats.ui.components.CarouselItem
@@ -130,49 +124,21 @@ fun CarouselScreen(
                 }
             }
 
-            // 顶部渐变遮罩
+            // 顶部渐变遮罩（仅作视觉氛围，不再显示文字信息）
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0xFF0D0D0D).copy(alpha = 0.7f),
+                                Color(0xFF0D0D0D).copy(alpha = 0.5f),
                                 Color.Transparent
                             ),
                             startY = 0f,
-                            endY = 200f
+                            endY = 160f
                         )
                     )
             )
-
-            // 顶部曲名与艺术家
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .padding(top = 16.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = currentTrack?.title ?: "",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
-                    Text(
-                        text = currentTrack?.artist ?: "",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
         }
 
         PlayerBar(
@@ -187,6 +153,7 @@ fun CarouselScreen(
             currentPosition = currentPosition,
             duration = duration,
             onSeek = onSeek,
+            compact = true,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }

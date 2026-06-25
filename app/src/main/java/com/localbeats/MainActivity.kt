@@ -254,7 +254,8 @@ fun MusicApp(
                 currentPosition = currentPosition,
                 duration = duration,
                 onSeek = { viewModel.seekTo(it) },
-                onImportClick = onImportFolderClick
+                onImportClick = onImportFolderClick,
+                onRescan = { viewModel.rescanCurrentFolder() }
             )
         }
     }

@@ -73,28 +73,34 @@ fun PlayerBar(
     coverUri: android.net.Uri? = null,
     artist: String? = null,
     lyrics: String? = null,
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // 胶囊形状：圆角设为很大的值，配合高度形成 pill
     val pillShape = RoundedCornerShape(50)
+    // compact 模式：横屏下让胶囊变短（宽度收窄），更精致
+    val horizontalPadding = if (compact) 64.dp else 16.dp
 
     // 解析歌词：LRC 格式可按播放进度同步显示当前行；纯文本则整段滚动
     val parsedLyrics = remember(lyrics) { LyricsParser.parse(lyrics) }
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
+    // LRC 同步模式：定位当前行；若处于第一行之前的前奏，回退显示第一行（避免空白）
     val currentLyricIndex = if (isSynced) {
-        LyricsParser.currentLineIndex(parsedLyrics, currentPosition)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition)
+        if (idx < 0) 0 else idx
     } else -1
-    val currentLyricText = if (isSynced && currentLyricIndex in parsedLyrics.indices) {
-        parsedLyrics[currentLyricIndex].text
-    } else if (!isSynced && parsedLyrics.isNotEmpty()) {
-        // 纯文本歌词：拼接为一行整段滚动
-        parsedLyrics.joinToString("  ·  ") { it.text }
-    } else null
+    val currentLyricText = when {
+        isSynced && currentLyricIndex in parsedLyrics.indices -> parsedLyrics[currentLyricIndex].text
+        !isSynced && parsedLyrics.isNotEmpty() ->
+            // 纯文本歌词：拼接为一行整段滚动
+            parsedLyrics.joinToString("  ·  ") { it.text }
+        else -> null
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = horizontalPadding)
             .padding(bottom = 12.dp)
             .navigationBarsPadding()
     ) {
@@ -248,13 +254,13 @@ fun PlayerBar(
     }
 }
 
-/** 圆角封面缩略图，无封面时显示音符占位 */
+/** 圆形封面缩略图，无封面时显示音符占位 */
 @Composable
 private fun CoverThumbnail(coverUri: android.net.Uri?, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
     ) {

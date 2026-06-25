@@ -65,6 +65,9 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.5.0")
 
+    // 嵌入式歌词标签解析：专为 Android 适配的 jaudiotagger 分支
+    implementation("com.github.AdrienPoupa:jaudiotagger:2.2.3")
+
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.documentfile:documentfile:1.1.0")
 

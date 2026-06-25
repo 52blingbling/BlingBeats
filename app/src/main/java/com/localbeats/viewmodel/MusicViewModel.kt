@@ -85,6 +85,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 重新扫描当前文件夹：强制重新加载音乐文件并提取歌词等元数据。
+     * 用于歌词提取逻辑更新后，刷新已扫描曲目的歌词字段。
+     * 会重置播放列表，但保留当前播放曲目的位置（如果仍在列表中）。
+     */
+    fun rescanCurrentFolder() {
+        val savedUri = prefs.getString("selected_folder_uri", null) ?: return
+        val folderUri = try { Uri.parse(savedUri) } catch (_: Throwable) { return }
+        loadMusicFromFolder(folderUri)
+    }
+
     fun clearTracks() {
         _tracks.value = emptyList()
         try {
@@ -110,6 +121,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playPrevious() {
         player.playPrevious()
+    }
+
+    /**
+     * 重排磁贴墙顺序：将 from 位置的曲目移动到 to 位置。
+     * 仅更新 UI 显示顺序，不影响当前播放列表（避免重置播放进度）。
+     */
+    fun reorderTracks(from: Int, to: Int) {
+        val list = _tracks.value.toMutableList()
+        if (from !in list.indices || to !in list.indices || from == to) return
+        val item = list.removeAt(from)
+        list.add(to, item)
+        _tracks.value = list
     }
 
     fun seekTo(position: Long) {

@@ -3,11 +3,17 @@ package com.localbeats.data.repository
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.localbeats.data.lyrics.LyricsExtractor
 import com.localbeats.data.model.MusicTrack
 import java.util.ArrayDeque
 
 class MusicRepository(private val context: Context) {
+
+    companion object {
+        private const val TAG = "MusicRepository"
+    }
 
     fun loadMusicTracksFromFolder(folderUri: Uri?): List<MusicTrack> {
         if (folderUri == null) {
@@ -23,6 +29,7 @@ class MusicRepository(private val context: Context) {
         val stack = ArrayDeque<DocumentFile>()
         stack.add(root)
 
+        var lyricsFound = 0
         while (stack.isNotEmpty()) {
             val current = stack.removeFirst()
             try {
@@ -30,7 +37,9 @@ class MusicRepository(private val context: Context) {
                     current.listFiles().forEach { child -> stack.add(child) }
                 } else if (isSupportedAudioFile(current.name.orEmpty())) {
                     try {
-                        tracks.add(buildTrack(current))
+                        val track = buildTrack(current)
+                        if (track.lyrics != null) lyricsFound++
+                        tracks.add(track)
                     } catch (_: Throwable) {
                         // 跳过无法解析的文件
                     }
@@ -40,6 +49,7 @@ class MusicRepository(private val context: Context) {
             }
         }
 
+        Log.i(TAG, "扫描完成：共 ${tracks.size} 首歌曲，其中 $lyricsFound 首提取到歌词")
         return tracks.sortedBy { it.title.lowercase() }
     }
 
@@ -63,9 +73,13 @@ class MusicRepository(private val context: Context) {
                 albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
             }
 
-            // 提取嵌入式歌词：MediaMetadataRetriever.METADATA_KEY_LYRICS 未在公开 API 中
-            // 暴露，但实际常量值为 29。部分设备也支持字符串形式，按优先级尝试。
-            lyrics = extractLyrics(retriever)
+            // 提取嵌入式歌词：先尝试 MediaMetadataRetriever（快，但覆盖有限），
+            // 失败再 fallback 到 jaudiotagger（需要复制文件，但支持 ID3 USLT 等所有标签）
+            lyrics = extractLyrics(retriever) ?: LyricsExtractor.extract(
+                context = context,
+                uri = uri,
+                cacheKey = uri.toString().hashCode().toString()
+            )
         } catch (_: Throwable) {
             // 捕获 Throwable 包括原生崩溃引发的 Error
         } finally {
@@ -76,6 +90,11 @@ class MusicRepository(private val context: Context) {
             }
         }
 
+        val finalLyrics = lyrics?.takeIf { it.isNotBlank() }
+        if (finalLyrics == null) {
+            Log.d(TAG, "无歌词: $rawName")
+        }
+
         return MusicTrack(
             id = uri.toString().hashCode().toLong(),
             title = title.ifBlank { "Unknown" },
@@ -84,7 +103,7 @@ class MusicRepository(private val context: Context) {
             uri = uri,
             coverUri = albumArtUri,
             filePath = uri.toString(),
-            lyrics = lyrics?.takeIf { it.isNotBlank() }
+            lyrics = finalLyrics
         )
     }
 
@@ -100,6 +119,7 @@ class MusicRepository(private val context: Context) {
             try {
                 val value = retriever.extractMetadata(key)
                 if (!value.isNullOrBlank()) {
+                    Log.i(TAG, "MediaMetadataRetriever 提取到歌词(key=$key)，长度=${value.length}")
                     return value
                 }
             } catch (_: Throwable) {
