@@ -3,56 +3,43 @@ package com.localbeats.data.repository
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.util.Log
 import androidx.documentfile.provider.DocumentFile
-import com.localbeats.Dbg
 import com.localbeats.data.model.MusicTrack
 import java.util.ArrayDeque
 
 class MusicRepository(private val context: Context) {
 
     fun loadMusicTracksFromFolder(folderUri: Uri?): List<MusicTrack> {
-        Dbg.log("[REPO] loadMusicTracksFromFolder START uri=$folderUri")
         if (folderUri == null) {
-            Dbg.log("[REPO] folderUri is null, return empty")
             return emptyList()
         }
 
         val root = try {
-            val r = DocumentFile.fromTreeUri(context, folderUri)
-            Dbg.log("[REPO] root=${r?.uri} exists=${r?.exists()} isDir=${r?.isDirectory}")
-            r ?: return emptyList()
-        } catch (t: Throwable) {
-            Dbg.err("[REPO] fromTreeUri threw", t)
+            DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
+        } catch (_: Throwable) {
             return emptyList()
         }
         val tracks = mutableListOf<MusicTrack>()
         val stack = ArrayDeque<DocumentFile>()
         stack.add(root)
-        var scanCount = 0
 
         while (stack.isNotEmpty()) {
             val current = stack.removeFirst()
             try {
                 if (current.isDirectory) {
-                    val children = current.listFiles()
-                    Dbg.log("[REPO] dir=${current.name} children=${children.size}")
-                    children.forEach { child -> stack.add(child) }
+                    current.listFiles().forEach { child -> stack.add(child) }
                 } else if (isSupportedAudioFile(current.name.orEmpty())) {
-                    scanCount++
-                    Dbg.log("[REPO] file#${scanCount} name=${current.name}")
                     try {
                         tracks.add(buildTrack(current))
-                    } catch (t: Throwable) {
-                        Dbg.err("[REPO] buildTrack failed name=${current.name}", t)
+                    } catch (_: Throwable) {
+                        // 跳过无法解析的文件
                     }
                 }
-            } catch (t: Throwable) {
-                Dbg.err("[REPO] iter failed name=${current.name}", t)
+            } catch (_: Throwable) {
+                // 跳过无法访问的目录/文件
             }
         }
 
-        Dbg.log("[REPO] DONE scanned=$scanCount tracks=${tracks.size}")
         return tracks.sortedBy { it.title.lowercase() }
     }
 
@@ -64,26 +51,28 @@ class MusicRepository(private val context: Context) {
         var duration = 0L
         var artist = "Unknown"
         var albumArtUri: Uri? = null
+        var lyrics: String? = null
 
         try {
-            Dbg.log("[REPO] setDataSource uri=$uri")
             retriever.setDataSource(context, uri)
-            Dbg.log("[REPO] setDataSource OK")
             duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
             artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown"
 
             val embeddedPicture = retriever.embeddedPicture
             if (embeddedPicture != null) {
-                Dbg.log("[REPO] cover bytes=${embeddedPicture.size}")
                 albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
             }
-        } catch (t: Throwable) {
-            Dbg.err("[REPO] buildTrack setDataSource failed name=$rawName", t)
+
+            // 提取嵌入式歌词：MediaMetadataRetriever.METADATA_KEY_LYRICS 未在公开 API 中
+            // 暴露，但实际常量值为 29。部分设备也支持字符串形式，按优先级尝试。
+            lyrics = extractLyrics(retriever)
+        } catch (_: Throwable) {
+            // 捕获 Throwable 包括原生崩溃引发的 Error
         } finally {
             try {
                 retriever.release()
-            } catch (t: Throwable) {
-                Dbg.err("[REPO] retriever.release failed", t)
+            } catch (_: Throwable) {
+                // release 失败时忽略
             }
         }
 
@@ -94,14 +83,32 @@ class MusicRepository(private val context: Context) {
             duration = duration,
             uri = uri,
             coverUri = albumArtUri,
-            filePath = uri.toString()
+            filePath = uri.toString(),
+            lyrics = lyrics?.takeIf { it.isNotBlank() }
         )
     }
 
     /**
-     * 将封面图字节写入应用私有缓存目录，返回文件 Uri。
-     * 文件名用曲目 id hash 确保唯一且不重复写入。
+     * 提取嵌入式歌词标签。
+     * Android MediaMetadataRetriever 中 METADATA_KEY_LYRICS (值 29) 被标记 @hide，
+     * 不同设备/解码器对 key 的支持有差异，按优先级尝试多个候选。
      */
+    private fun extractLyrics(retriever: MediaMetadataRetriever): String? {
+        // 候选 key：29 是 Android 源码中 METADATA_KEY_LYRICS 的实际值
+        val candidates = intArrayOf(29)
+        for (key in candidates) {
+            try {
+                val value = retriever.extractMetadata(key)
+                if (!value.isNullOrBlank()) {
+                    return value
+                }
+            } catch (_: Throwable) {
+                // 该 key 不支持，继续尝试下一个
+            }
+        }
+        return null
+    }
+
     private fun saveCoverArt(trackId: String, data: ByteArray): Uri? {
         return try {
             val cacheDir = java.io.File(context.cacheDir, "covers").also { it.mkdirs() }

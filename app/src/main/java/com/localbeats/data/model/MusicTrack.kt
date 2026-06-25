@@ -9,7 +9,9 @@ data class MusicTrack(
     val duration: Long,
     val uri: Uri,
     val coverUri: Uri?,
-    val filePath: String
+    val filePath: String,
+    /** 嵌入式歌词（可能为纯文本或带 LRC 时间戳格式） */
+    val lyrics: String? = null
 ) {
     val durationText: String
         get() {

@@ -1,7 +1,10 @@
 package com.localbeats.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -15,16 +18,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.localbeats.data.model.MusicTrack
 import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.abs
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+/**
+ * 横屏专辑轮播：
+ * - 当前曲目专辑正对显示（旋转 0）
+ * - 左侧专辑堆叠并 3D 向右倾斜（rotationY < 0，右侧朝向观察者）
+ * - 右侧专辑堆叠并 3D 向左倾斜（rotationY > 0，左侧朝向观察者）
+ * - 滑动切换居中专辑即播放对应曲目
+ *
+ * 关于旋转重播修复：监听 settledPage 而非 currentPage，且仅当目标曲目与当前
+ * 播放曲目不同时才调用 onTrackClick。旋转时 initialPage 即当前曲目，
+ * tracks[page].id == currentTrack?.id 成立，因此跳过调用，避免重置 MediaItem。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CarouselScreen(
     tracks: List<MusicTrack>,
@@ -45,12 +62,15 @@ fun CarouselScreen(
         pageCount = { tracks.size }
     )
 
+    // 仅在 settledPage 改变（用户停止滑动后）且目标与当前播放曲目不同时切换。
+    // 旋转重建时 settledPage = initialPage = 当前曲目，跳过调用避免重播。
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collectLatest { page ->
-            if (page in tracks.indices) {
-                onTrackClick(tracks[page])
+        snapshotFlow { pagerState.settledPage }
+            .collectLatest { page ->
+                if (page in tracks.indices && tracks[page].id != currentTrack?.id) {
+                    onTrackClick(tracks[page])
+                }
             }
-        }
     }
 
     Box(
@@ -69,25 +89,48 @@ fun CarouselScreen(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 48.dp)
+                // 不使用 contentPadding peek，改用 translationX 实现真正的堆叠
+                contentPadding = PaddingValues(horizontal = 0.dp),
+                // 预渲染左右各 2 页，保证堆叠邻居可见
+                beyondViewportPageCount = 2
             ) { page ->
                 val track = tracks[page]
-                val pageOffset = (
+                // pageOffset：当前页相对此页的偏移。左侧页 pageOffset > 0，右侧页 < 0
+                val pageOffset =
                     (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-                )
+                val absOffset = abs(pageOffset)
 
-                CarouselItem(
-                    track = track,
-                    pageOffset = pageOffset,
-                    isPlaying = isPlaying && track.id == currentTrack?.id,
-                    onClick = { onTrackClick(track) },
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(vertical = 80.dp)
-                )
+                        // 当前页 zIndex 最高（绘制在最上层），邻居越远越靠后
+                        .zIndex(10f - absOffset)
+                        .graphicsLayer {
+                            // 堆叠：将相邻页拉向中心（保留 ~15% 露出量）
+                            translationX = pageOffset * size.width * 0.85f
+                            // 中心放大，邻居缩小
+                            val s = (1f - absOffset * 0.18f).coerceAtLeast(0.45f)
+                            scaleX = s
+                            scaleY = s
+                            // 3D 旋转：左侧向右倾斜（rotationY < 0，右边缘朝向观察者），
+                            // 右侧向左倾斜（rotationY > 0，左边缘朝向观察者）
+                            rotationY = pageOffset * -35f
+                            // cameraDistance 越小透视越强
+                            cameraDistance = 8f * density
+                            // 邻居略淡出
+                            alpha = (1f - absOffset * 0.35f).coerceAtLeast(0.25f)
+                        }
+                ) {
+                    CarouselItem(
+                        track = track,
+                        isPlaying = isPlaying && track.id == currentTrack?.id,
+                        onClick = { onTrackClick(track) },
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
             }
 
-            // 顶部标题区域（带渐变遮罩）
+            // 顶部渐变遮罩
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -103,7 +146,7 @@ fun CarouselScreen(
                     )
             )
 
-            // 曲名与艺术家
+            // 顶部曲名与艺术家
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -111,9 +154,7 @@ fun CarouselScreen(
                     .padding(top = 16.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
-                androidx.compose.foundation.layout.Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = currentTrack?.title ?: "",
                         color = Color.White,
@@ -128,7 +169,7 @@ fun CarouselScreen(
                         color = Color.White.copy(alpha = 0.6f),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 0.dp)
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
@@ -136,6 +177,9 @@ fun CarouselScreen(
 
         PlayerBar(
             title = currentTrack?.title ?: "未选择歌曲",
+            artist = currentTrack?.artist,
+            coverUri = currentTrack?.coverUri,
+            lyrics = currentTrack?.lyrics,
             isPlaying = isPlaying,
             onPlayPauseClick = onPlayPauseClick,
             onPreviousClick = onPreviousClick,
