@@ -11,7 +11,6 @@ import java.util.ArrayDeque
 
 class MusicRepository(private val context: Context) {
 
-    #region debug-point repo-1
     fun loadMusicTracksFromFolder(folderUri: Uri?): List<MusicTrack> {
         Dbg.log("[REPO] loadMusicTracksFromFolder START uri=$folderUri")
         if (folderUri == null) {
@@ -56,7 +55,6 @@ class MusicRepository(private val context: Context) {
         Dbg.log("[REPO] DONE scanned=$scanCount tracks=${tracks.size}")
         return tracks.sortedBy { it.title.lowercase() }
     }
-    #endregion
 
     private fun buildTrack(documentFile: DocumentFile): MusicTrack {
         val uri = documentFile.uri
