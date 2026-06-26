@@ -130,8 +130,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun reorderTracks(from: Int, to: Int) {
         val list = _tracks.value.toMutableList()
         if (from !in list.indices || to !in list.indices || from == to) return
-        val item = list.removeAt(from)
-        list.add(to, item)
+        // 交换两个磁贴的位置（swap），与磁贴墙的视觉交换一致，
+        // 避免移动插入导致整体 reflow
+        val tmp = list[from]
+        list[from] = list[to]
+        list[to] = tmp
         _tracks.value = list
     }
 
