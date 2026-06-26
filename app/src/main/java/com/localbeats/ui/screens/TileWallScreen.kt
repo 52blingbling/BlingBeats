@@ -180,15 +180,16 @@ fun TileWallScreen(
                     onDrag = { change, dragAmount ->
                         change.consume()
                         val maxX = max(0f, contentWidth - viewportWidth)
-                        val usableHeight = (viewportHeight - topInsetPx - bottomInsetPx).coerceAtLeast(0f)
-                        val maxScrollUp = max(0f, contentHeight - usableHeight)
                         offsetX = (offsetX + dragAmount.x).coerceIn(
                             -maxX - viewportWidth * 0.25f,
                             viewportWidth * 0.25f
                         )
+                        // 彻底放开坐标限制，允许磁贴墙被拖拽到屏幕外非常远的地方
+                        // 下拉极限：整个磁贴墙拉到底部播放条以下（viewportHeight）
+                        // 上划极限：整个磁贴墙拉到顶部以上（-contentHeight - viewportHeight）
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            topInsetPx - maxScrollUp - viewportHeight * 0.25f,
-                            (viewportHeight - bottomInsetPx - 100f).coerceAtLeast(topInsetPx)
+                            -contentHeight - viewportHeight,
+                            viewportHeight
                         )
                     }
                 )
