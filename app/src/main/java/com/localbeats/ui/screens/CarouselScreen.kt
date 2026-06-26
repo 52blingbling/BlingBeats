@@ -148,8 +148,8 @@ fun CarouselScreen(
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val screenHeightDp = configuration.screenHeightDp.dp
-    // 动态计算封面大小，为顶部标题和底部歌词留出充足空间
-    val coverSize = (screenHeightDp - 150.dp).coerceAtMost(320.dp).coerceAtLeast(160.dp)
+    // 动态计算封面大小，为顶部标题和底部歌词留出更紧凑的空间（现在播放条在角落，可以把封面放得更大）
+    val coverSize = (screenHeightDp - 100.dp).coerceAtMost(360.dp).coerceAtLeast(200.dp)
 
     Box(
         modifier = modifier

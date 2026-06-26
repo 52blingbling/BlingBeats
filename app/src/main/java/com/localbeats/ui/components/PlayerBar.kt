@@ -151,8 +151,7 @@ fun PlayerBar(
         ) {
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
+                modifier = (if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

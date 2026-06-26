@@ -119,13 +119,11 @@ fun TileWallScreen(
 
     var randomSeed by remember { mutableIntStateOf(0) }
 
-    // 使用 Configuration 获取绝对屏幕尺寸，避免 onGloballyPositioned 未触发导致的尺寸为0问题
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    var containerWidth by remember { mutableIntStateOf(0) }
+    var containerHeight by remember { mutableIntStateOf(0) }
 
-    // 列数：视口宽度决定，+1 列保证略宽于视口（可横向平移一点）
-    val columns = if (screenWidthPx > 0f) max(3, (screenWidthPx / cellPx).toInt()) + 1 else 5
+    // 列数：视口实际测量宽度决定，+1 列保证略宽于视口（可横向平移一点），如果还没测量好，默认5列
+    val columns = if (containerWidth > 0) max(3, (containerWidth / cellPx).toInt()) + 1 else 5
 
     // 按 track.id 取模决定 span，每个磁贴尺寸稳定（重排不变）
     val idSetKey = remember(tracks) { tracks.map { it.id }.toSet() }
@@ -167,17 +165,21 @@ fun TileWallScreen(
     val currentOnReorder by rememberUpdatedState(onReorder)
 
     // 性能优化核心：只渲染视野内（加两倍格子缓冲）的磁贴，避免 Coil 一次性加载几千张封面导致卡顿
-    // 直接在组合阶段计算，依赖 Compose 本身的极速重组和 key() 节点复用，避免 derivedStateOf 潜藏的缓存未刷新问题
-    val visibleTracks = tracks.filter { track ->
-        val pos = tilePositions[track.id] ?: (0 to 0)
-        val span = tileSpansMap[track.id] ?: (1 to 1)
-        val x = pos.first * cellPx + offsetX
-        val y = pos.second * cellPx + offsetY
-        val w = span.first * cellPx
-        val h = span.second * cellPx
-        val buffer = cellPx * 2f
-        x + w > -buffer && x < screenWidthPx + buffer &&
-        y + h > -buffer && y < screenHeightPx + buffer
+    // 如果还没有测量出容器大小，默认展示所有，防止初次显示空白
+    val visibleTracks = if (containerWidth == 0 || containerHeight == 0) {
+        tracks
+    } else {
+        tracks.filter { track ->
+            val pos = tilePositions[track.id] ?: (0 to 0)
+            val span = tileSpansMap[track.id] ?: (1 to 1)
+            val x = pos.first * cellPx + offsetX
+            val y = pos.second * cellPx + offsetY
+            val w = span.first * cellPx
+            val h = span.second * cellPx
+            val buffer = cellPx * 2f
+            x + w > -buffer && x < containerWidth + buffer &&
+            y + h > -buffer && y < containerHeight + buffer
+        }
     }
 
     Box(
@@ -185,23 +187,29 @@ fun TileWallScreen(
             .fillMaxSize()
             .clipToBounds()
             .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
+            .onGloballyPositioned { coords ->
+                containerWidth = coords.size.width
+                containerHeight = coords.size.height
+            }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val maxX = max(0f, contentWidth - screenWidthPx)
+                        val wPx = containerWidth.toFloat()
+                        val hPx = containerHeight.toFloat()
+                        val maxX = max(0f, contentWidth - wPx)
                         // X轴限制：最多允许向左/右多滑出屏幕宽度的 30%
                         offsetX = (offsetX + dragAmount.x).coerceIn(
-                            -maxX - screenWidthPx * 0.3f,
-                            screenWidthPx * 0.3f
+                            -maxX - wPx * 0.3f,
+                            wPx * 0.3f
                         )
                         // Y轴限制：标准的滚动视图边界，外加 20% 的屏幕高度作为弹性越界缓冲
                         val playerBarHeight = 100f
                         val maxScrollUp = topInsetPx
-                        val minScrollDown = kotlin.math.min(topInsetPx, screenHeightPx - bottomInsetPx - playerBarHeight - contentHeight)
+                        val minScrollDown = kotlin.math.min(topInsetPx, hPx - bottomInsetPx - playerBarHeight - contentHeight)
                         
-                        val minY = minScrollDown - screenHeightPx * 0.2f
-                        val maxY = maxScrollUp + screenHeightPx * 0.2f
+                        val minY = minScrollDown - hPx * 0.2f
+                        val maxY = maxScrollUp + hPx * 0.2f
                         
                         offsetY = (offsetY + dragAmount.y).coerceIn(minY, maxY)
                     }
