@@ -6,8 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +46,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -69,6 +70,8 @@ import com.localbeats.ui.components.placeholderPalettes
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Windows 8/10 开始菜单风格的方形磁贴墙：
@@ -98,6 +101,9 @@ fun TileWallScreen(
     val context = LocalContext.current
     // 基础单元尺寸：每格 110dp
     val cellPx = with(density) { 110.dp.toPx() }
+    // 触发拖动的位移阈值；长按延时（短于系统默认 500ms，更跟手）
+    val touchSlop = with(density) { 18.dp.toPx() }
+    val longPressMs = 400L
 
     // 竖屏封面歌曲标题显示开关（持久化到 SharedPreferences）
     val prefs = remember { context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE) }
@@ -122,8 +128,16 @@ fun TileWallScreen(
     // 每个磁贴在磁贴墙坐标系中的左上角坐标（measure 后填充）
     val placements = remember { mutableStateListOf<Pair<Float, Float>>() }
 
-    // 顶部标题栏高度（动态测量），磁贴墙内容从此高度下方开始，避免被遮挡
+    // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx，保证顶部磁贴不被标题栏遮挡
     var topInsetPx by remember { mutableFloatStateOf(0f) }
+    // offsetY 是否已按 topInsetPx 初始化（仅首次测量后设置一次）
+    var offsetInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(topInsetPx) {
+        if (!offsetInitialized && topInsetPx > 0f) {
+            offsetY = topInsetPx
+            offsetInitialized = true
+        }
+    }
 
     // 长按拖动相关状态
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
@@ -139,91 +153,146 @@ fun TileWallScreen(
                 viewportWidth = coords.size.width.toFloat()
                 viewportHeight = coords.size.height.toFloat()
             }
-            // 长按拖动：交换磁贴位置（用 detectDragGesturesAfterLongPress 可靠检测长按）
+            // 统一手势识别：短按拖动 → 平移磁贴墙；长按后拖动 → 拖动磁贴交换位置；轻点 → 播放（交由 clickable 处理）
+            // 用 withTimeoutOrNull 在手指静止时也能可靠触发长按（awaitPointerEvent 在静止时不返回）
             .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        // 长按触发，找到被按下的磁贴
-                        val xInContent = offset.x - offsetX
-                        val yInContent = offset.y - offsetY
-                        for (i in placements.indices) {
-                            val (px, py) = placements[i]
-                            val (sw, sh) = tileSpans.getOrNull(i) ?: continue
-                            if (xInContent >= px && xInContent < px + sw * cellPx &&
-                                yInContent >= py && yInContent < py + sh * cellPx
-                            ) {
-                                draggedIndex = i
-                                dragOffsetX = 0f
-                                dragOffsetY = 0f
+                awaitPointerEventScope {
+                    while (true) {
+                        // 等待首个按下事件
+                        var down: PointerInputChange? = null
+                        while (down == null) {
+                            val initEvent = awaitPointerEvent()
+                            down = initEvent.changes.firstOrNull { it.pressed }
+                        }
+                        val downChange = down
+                        val downPosition = downChange.position
+                        val downTime = System.currentTimeMillis()
+                        // 模式：0=未决, 1=平移, 2=磁贴拖动
+                        var mode = 0
+
+                        // 第一阶段：判定长按 / 平移 / 抬起（轻点）
+                        while (mode == 0) {
+                            val elapsed = System.currentTimeMillis() - downTime
+                            val remaining = longPressMs - elapsed
+                            if (remaining <= 0) {
+                                // 长按超时：进入磁贴拖动模式
+                                if (draggedIndex == null) {
+                                    val xInContent = downPosition.x - offsetX
+                                    val yInContent = downPosition.y - offsetY
+                                    for (i in placements.indices) {
+                                        val (px, py) = placements[i]
+                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
+                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
+                                            yInContent >= py && yInContent < py + sh * cellPx
+                                        ) {
+                                            draggedIndex = i
+                                            dragOffsetX = 0f
+                                            dragOffsetY = 0f
+                                            break
+                                        }
+                                    }
+                                }
+                                mode = 2
                                 break
                             }
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        if (draggedIndex == null) return@detectDragGesturesAfterLongPress
-                        change.consume()
-                        dragOffsetX += dragAmount.x
-                        dragOffsetY += dragAmount.y
-
-                        val draggedIdx = draggedIndex ?: return@detectDragGesturesAfterLongPress
-                        val placement = placements.getOrNull(draggedIdx) ?: return@detectDragGesturesAfterLongPress
-                        val span = tileSpans.getOrNull(draggedIdx) ?: return@detectDragGesturesAfterLongPress
-                        val draggedCenterX = placement.first + span.first * cellPx / 2 + dragOffsetX
-                        val draggedCenterY = placement.second + span.second * cellPx / 2 + dragOffsetY
-
-                        // 找出包含被拖磁贴中心点的目标磁贴并实时交换
-                        for (i in placements.indices) {
-                            if (i == draggedIdx) continue
-                            val (px, py) = placements[i]
-                            val (sw, sh) = tileSpans[i]
-                            if (draggedCenterX >= px && draggedCenterX < px + sw * cellPx &&
-                                draggedCenterY >= py && draggedCenterY < py + sh * cellPx
-                            ) {
-                                val oldDraggedPlacement = placements[draggedIdx]
-                                val oldTargetPlacement = placements[i]
-                                onReorder(draggedIdx, i)
-                                draggedIndex = i
-                                // 调整 dragOffset 使被拖磁贴保持在手指下方
-                                dragOffsetX += oldDraggedPlacement.first - oldTargetPlacement.first
-                                dragOffsetY += oldDraggedPlacement.second - oldTargetPlacement.second
+                            val event = withTimeoutOrNull(remaining) { awaitPointerEvent() }
+                            if (event == null) {
+                                // 超时：进入磁贴拖动模式
+                                if (draggedIndex == null) {
+                                    val xInContent = downPosition.x - offsetX
+                                    val yInContent = downPosition.y - offsetY
+                                    for (i in placements.indices) {
+                                        val (px, py) = placements[i]
+                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
+                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
+                                            yInContent >= py && yInContent < py + sh * cellPx
+                                        ) {
+                                            draggedIndex = i
+                                            dragOffsetX = 0f
+                                            dragOffsetY = 0f
+                                            break
+                                        }
+                                    }
+                                }
+                                mode = 2
                                 break
                             }
+                            val change = event.changes.firstOrNull { it.id == downChange.id } ?: break
+                            if (!change.pressed) break // 抬起：轻点，交由 clickable 处理
+                            val dx = change.position.x - downPosition.x
+                            val dy = change.position.y - downPosition.y
+                            val moved = sqrt(dx * dx + dy * dy)
+                            if (moved >= touchSlop) {
+                                mode = 1 // 超过位移阈值：进入平移模式
+                            }
                         }
-                    },
-                    onDragEnd = {
-                        draggedIndex = null
-                        dragOffsetX = 0f
-                        dragOffsetY = 0f
-                    },
-                    onDragCancel = {
-                        draggedIndex = null
-                        dragOffsetX = 0f
-                        dragOffsetY = 0f
+
+                        // 第二阶段：按模式处理后续拖动，直到抬起
+                        if (mode == 1 || mode == 2) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == downChange.id } ?: break
+                                if (!change.pressed) break
+                                val dragX = change.positionChange().x
+                                val dragY = change.positionChange().y
+
+                                if (mode == 1) {
+                                    // 平移磁贴墙
+                                    change.consume()
+                                    val maxX = max(0f, contentWidth - viewportWidth)
+                                    val usableHeight = (viewportHeight - topInsetPx).coerceAtLeast(0f)
+                                    val maxScrollUp = max(0f, contentHeight - usableHeight)
+                                    val restY = topInsetPx
+                                    val newX = (offsetX + dragX).coerceIn(
+                                        -maxX - viewportWidth * 0.3f,
+                                        viewportWidth * 0.3f
+                                    )
+                                    val newY = (offsetY + dragY).coerceIn(
+                                        restY - maxScrollUp - viewportHeight * 0.3f,
+                                        restY + viewportHeight * 0.3f
+                                    )
+                                    offsetX = newX
+                                    offsetY = newY
+                                } else {
+                                    // 磁贴拖动：跟随手指并实时 swap
+                                    change.consume()
+                                    dragOffsetX += dragX
+                                    dragOffsetY += dragY
+
+                                    val draggedIdx = draggedIndex ?: continue
+                                    val placement = placements.getOrNull(draggedIdx) ?: continue
+                                    val span = tileSpans.getOrNull(draggedIdx) ?: continue
+                                    val draggedCenterX = placement.first + span.first * cellPx / 2 + dragOffsetX
+                                    val draggedCenterY = placement.second + span.second * cellPx / 2 + dragOffsetY
+
+                                    for (i in placements.indices) {
+                                        if (i == draggedIdx) continue
+                                        val (px, py) = placements[i]
+                                        val (sw, sh) = tileSpans[i]
+                                        if (draggedCenterX >= px && draggedCenterX < px + sw * cellPx &&
+                                            draggedCenterY >= py && draggedCenterY < py + sh * cellPx
+                                        ) {
+                                            val oldDraggedPlacement = placements[draggedIdx]
+                                            val oldTargetPlacement = placements[i]
+                                            onReorder(draggedIdx, i)
+                                            draggedIndex = i
+                                            dragOffsetX += oldDraggedPlacement.first - oldTargetPlacement.first
+                                            dragOffsetY += oldDraggedPlacement.second - oldTargetPlacement.second
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 抬起：结束磁贴拖动
+                        if (draggedIndex != null) {
+                            draggedIndex = null
+                            dragOffsetX = 0f
+                            dragOffsetY = 0f
+                        }
                     }
-                )
-            }
-            // 短按拖动：平移磁贴墙（仅在未进入长按拖动模式时生效）
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        // 长按拖动模式进行中时不平移
-                        if (draggedIndex != null) return@detectDragGestures
-                        change.consume()
-                        val maxX = max(0f, contentWidth - viewportWidth)
-                        val maxY = max(0f, contentHeight - viewportHeight)
-                        // 自由拖动范围：四方向均允许 30% 视口尺寸的弹性越界
-                        val newX = (offsetX + dragAmount.x).coerceIn(
-                            -maxX - viewportWidth * 0.3f,
-                            viewportWidth * 0.3f
-                        )
-                        val newY = (offsetY + dragAmount.y).coerceIn(
-                            -maxY - viewportHeight * 0.3f,
-                            viewportHeight * 0.3f
-                        )
-                        offsetX = newX
-                        offsetY = newY
-                    }
-                )
+                }
             }
     ) {
         Layout(
@@ -316,7 +385,6 @@ fun TileWallScreen(
                 }
             },
             modifier = Modifier
-                .padding(top = with(density) { topInsetPx.toDp() })
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
         )
 
@@ -380,7 +448,8 @@ fun TileWallScreen(
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Filled.FolderOpen,
-                                        contentDescription = null
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             )
@@ -393,7 +462,8 @@ fun TileWallScreen(
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Filled.Refresh,
-                                        contentDescription = null
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             )
@@ -403,7 +473,7 @@ fun TileWallScreen(
                                     showTitle = !showTitle
                                     prefs.edit().putBoolean("show_tile_title", showTitle).apply()
                                 },
-                                leadingIcon = {
+                                trailingIcon = {
                                     Switch(
                                         checked = showTitle,
                                         onCheckedChange = {
@@ -411,8 +481,7 @@ fun TileWallScreen(
                                             prefs.edit().putBoolean("show_tile_title", it).apply()
                                         }
                                     )
-                                },
-                                trailingIcon = {}
+                                }
                             )
                         }
                     }

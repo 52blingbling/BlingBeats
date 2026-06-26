@@ -155,7 +155,7 @@ fun CarouselScreen(
             duration = duration,
             onSeek = onSeek,
             compact = true,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomStart)
         )
     }
 }
