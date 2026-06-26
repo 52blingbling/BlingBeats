@@ -15,62 +15,103 @@ class MusicRepository(private val context: Context) {
         private const val TAG = "MusicRepository"
     }
 
-    fun loadMusicTracksFromFolder(folderUri: Uri?): List<MusicTrack> {
-        if (folderUri == null) {
-            return emptyList()
-        }
+    fun scanAudioFolders(): List<String> {
+        val folders = mutableSetOf<String>()
+        val projection = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
+        val selection = "${android.provider.MediaStore.Audio.Media.IS_MUSIC} != 0"
+        try {
+            context.contentResolver.query(
+                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataCol)
+                    java.io.File(path).parent?.let { folders.add(it) }
+                }
+            }
+        } catch (_: Throwable) {}
+        return folders.toList().sorted()
+    }
 
-        val root = try {
-            DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
-        } catch (_: Throwable) {
-            return emptyList()
-        }
+    fun loadMusicTracksFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean): List<MusicTrack> {
         val tracks = mutableListOf<MusicTrack>()
-        val stack = ArrayDeque<DocumentFile>()
-        stack.add(root)
-
+        val projection = arrayOf(
+            android.provider.MediaStore.Audio.Media._ID,
+            android.provider.MediaStore.Audio.Media.DATA,
+            android.provider.MediaStore.Audio.Media.TITLE,
+            android.provider.MediaStore.Audio.Media.ARTIST,
+            android.provider.MediaStore.Audio.Media.DURATION
+        )
+        val selection = "${android.provider.MediaStore.Audio.Media.IS_MUSIC} != 0"
+        
         var lyricsFound = 0
-        while (stack.isNotEmpty()) {
-            val current = stack.removeFirst()
-            try {
-                if (current.isDirectory) {
-                    current.listFiles().forEach { child -> stack.add(child) }
-                } else if (isSupportedAudioFile(current.name.orEmpty())) {
+        try {
+            context.contentResolver.query(
+                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                android.provider.MediaStore.Audio.Media.TITLE + " ASC"
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media._ID)
+                val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)
+                val titleCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.ARTIST)
+                val durationCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DURATION)
+
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataCol)
+                    val parent = java.io.File(path).parent ?: continue
+                    if (ignoredFolders.contains(parent)) continue
+
+                    val id = cursor.getLong(idCol)
+                    val uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val title = cursor.getString(titleCol) ?: "Unknown"
+                    val artist = cursor.getString(artistCol) ?: "Unknown"
+                    val duration = cursor.getLong(durationCol)
+                    
+                    if (filterShortAudio && duration < 60_000) {
+                        continue
+                    }
+                    
                     try {
-                        val track = buildTrack(current)
+                        val track = buildTrackFromMediaStore(id, uri, path, title, artist, duration)
                         if (track.lyrics != null) lyricsFound++
                         tracks.add(track)
                     } catch (_: Throwable) {
                         // 跳过无法解析的文件
                     }
                 }
-            } catch (_: Throwable) {
-                // 跳过无法访问的目录/文件
             }
-        }
+        } catch (_: Throwable) {}
 
         Log.i(TAG, "扫描完成：共 ${tracks.size} 首歌曲，其中 $lyricsFound 首提取到歌词")
-        return tracks.sortedBy { it.title.lowercase() }
+        return tracks
     }
 
-    private fun buildTrack(documentFile: DocumentFile): MusicTrack {
-        val uri = documentFile.uri
-        val rawName = documentFile.name ?: "Unknown"
-        val title = rawName.removeSuffix(getFileExtension(rawName))
+    private fun buildTrackFromMediaStore(
+        id: Long,
+        uri: Uri,
+        filePath: String,
+        title: String,
+        artist: String,
+        duration: Long
+    ): MusicTrack {
         val retriever = MediaMetadataRetriever()
-        var duration = 0L
-        var artist = "Unknown"
         var albumArtUri: Uri? = null
         var lyrics: String? = null
 
         try {
             retriever.setDataSource(context, uri)
-            duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
-            artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown"
-
+            // Artist 和 Duration 我们已经从 MediaStore 拿到了，所以这里主要是拿封面和歌词
+            
             val embeddedPicture = retriever.embeddedPicture
             if (embeddedPicture != null) {
-                albumArtUri = saveCoverArt(uri.toString().hashCode().toString(), embeddedPicture)
+                albumArtUri = saveCoverArt(id.toString(), embeddedPicture)
             }
 
             // 提取嵌入式歌词：先尝试 MediaMetadataRetriever（快，但覆盖有限），
@@ -78,7 +119,7 @@ class MusicRepository(private val context: Context) {
             lyrics = extractLyrics(retriever) ?: LyricsExtractor.extract(
                 context = context,
                 uri = uri,
-                cacheKey = uri.toString().hashCode().toString()
+                cacheKey = id.toString()
             )
         } catch (_: Throwable) {
             // 捕获 Throwable 包括原生崩溃引发的 Error
@@ -92,17 +133,17 @@ class MusicRepository(private val context: Context) {
 
         val finalLyrics = lyrics?.takeIf { it.isNotBlank() }
         if (finalLyrics == null) {
-            Log.d(TAG, "无歌词: $rawName")
+            Log.d(TAG, "无歌词: $title")
         }
 
         return MusicTrack(
-            id = uri.toString().hashCode().toLong(),
+            id = id,
             title = title.ifBlank { "Unknown" },
             artist = artist.ifBlank { "Unknown" },
             duration = duration,
             uri = uri,
             coverUri = albumArtUri,
-            filePath = uri.toString(),
+            filePath = filePath,
             lyrics = finalLyrics
         )
     }

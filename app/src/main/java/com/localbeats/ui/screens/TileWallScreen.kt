@@ -119,12 +119,13 @@ fun TileWallScreen(
 
     var randomSeed by remember { mutableIntStateOf(0) }
 
-    // 视口与内容尺寸
-    var viewportWidth by remember { mutableFloatStateOf(0f) }
-    var viewportHeight by remember { mutableFloatStateOf(0f) }
+    // 使用 Configuration 获取绝对屏幕尺寸，避免 onGloballyPositioned 未触发导致的尺寸为0问题
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
     // 列数：视口宽度决定，+1 列保证略宽于视口（可横向平移一点）
-    val columns = if (viewportWidth > 0f) max(3, (viewportWidth / cellPx).toInt()) + 1 else 5
+    val columns = if (screenWidthPx > 0f) max(3, (screenWidthPx / cellPx).toInt()) + 1 else 5
 
     // 按 track.id 取模决定 span，每个磁贴尺寸稳定（重排不变）
     val idSetKey = remember(tracks) { tracks.map { it.id }.toSet() }
@@ -169,27 +170,24 @@ fun TileWallScreen(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
-            .background(Color(0xFF0D0D0D))
-            .onGloballyPositioned { coords ->
-                viewportWidth = coords.size.width.toFloat()
-                viewportHeight = coords.size.height.toFloat()
-            }
-            // 平移磁贴墙
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val maxX = max(0f, contentWidth - viewportWidth)
+                        val maxX = max(0f, contentWidth - screenWidthPx)
+                        // X轴限制：最多允许向左/右多滑出屏幕宽度的 30%
                         offsetX = (offsetX + dragAmount.x).coerceIn(
-                            -maxX - viewportWidth * 0.25f,
-                            viewportWidth * 0.25f
+                            -maxX - screenWidthPx * 0.3f,
+                            screenWidthPx * 0.3f
                         )
-                        // 彻底放开坐标限制，允许磁贴墙被拖拽到屏幕外非常远的地方
-                        // 下拉极限：整个磁贴墙拉到底部播放条以下（viewportHeight）
-                        // 上划极限：整个磁贴墙拉到顶部以上（-contentHeight - viewportHeight）
+                        // Y轴限制：
+                        // 下拉极限：允许把第一排磁贴拖到屏幕底部（悬浮播放条之上），所以最大值是 screenHeightPx - bottomInsetPx - 100f
+                        // 上划极限：允许把最后一排磁贴拖到屏幕顶部，所以最小值是 -contentHeight + topInsetPx
+                        // 为了允许弹性手感，再各给 30% 的屏幕高度作为越界缓冲
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            -100000f,
-                            100000f
+                            -contentHeight + topInsetPx - screenHeightPx * 0.3f,
+                            screenHeightPx - bottomInsetPx - 100f
                         )
                     }
                 )
@@ -275,8 +273,9 @@ fun TileWallScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF0D0D0D),
-                            Color(0xFF0D0D0D).copy(alpha = 0.9f),
+                            androidx.compose.material3.MaterialTheme.colorScheme.background,
+                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.9f),
+                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.3f),
                             Color.Transparent
                         )
                     )
@@ -294,15 +293,15 @@ fun TileWallScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "LocalBeats",
-                    color = Color.White,
+                    text = "BlingBeats",
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "${tracks.size} 首",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                         fontSize = 13.sp
                     )
                     Box {
@@ -310,7 +309,7 @@ fun TileWallScreen(
                             Icon(
                                 imageVector = Icons.Filled.Settings,
                                 contentDescription = "设置",
-                                tint = Color(0xFFBB86FC)
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                             )
                         }
                         DropdownMenu(
@@ -519,7 +518,7 @@ private fun TileContent(
                 Icon(
                     imageVector = Icons.Filled.MusicNote,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.3f),
+                    tint = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.size(if (spanWidth >= 2 && spanHeight >= 2) 40.dp else 28.dp)
                 )
             }

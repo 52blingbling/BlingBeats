@@ -1,8 +1,12 @@
 package com.localbeats.data.player
 
 import android.content.Context
+import android.content.Intent
 import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -14,7 +18,16 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class MusicPlayer(context: Context) {
 
-    private val exoPlayer = ExoPlayer.Builder(context).build()
+    private val exoPlayer = ExoPlayer.Builder(context)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .build(),
+            true
+        )
+        .setHandleAudioBecomingNoisy(true)
+        .build()
 
     private val _currentTrack = MutableStateFlow<MusicTrack?>(null)
     val currentTrack: StateFlow<MusicTrack?> = _currentTrack.asStateFlow()
@@ -74,6 +87,14 @@ class MusicPlayer(context: Context) {
     }
 
     init {
+        MusicPlaybackService.playerInstance = exoPlayer
+        try {
+            val intent = Intent(context, MusicPlaybackService::class.java)
+            context.startService(intent)
+        } catch (_: Exception) {
+            // Android 8+ background start restriction.
+            // Usually this is called in foreground, but safely catch just in case.
+        }
         exoPlayer.addListener(listener)
     }
 
@@ -96,7 +117,18 @@ class MusicPlayer(context: Context) {
 
     @OptIn(UnstableApi::class)
     private fun prepareTrack(track: MusicTrack) {
-        val mediaItem = MediaItem.fromUri(track.uri)
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setArtworkUri(track.coverUri)
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(track.uri)
+            .setMediaId(track.id.toString())
+            .setMediaMetadata(mediaMetadata)
+            .build()
+            
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
         _currentTrack.value = track

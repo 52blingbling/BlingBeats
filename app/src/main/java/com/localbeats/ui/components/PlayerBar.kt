@@ -84,8 +84,10 @@ fun PlayerBar(
     val pillShape = RoundedCornerShape(50)
     // compact 模式：横屏下让胶囊变短（宽度收窄），更精致
     val horizontalPadding = if (compact) 24.dp else 16.dp
-    // compact 模式：横屏下不占满宽度，收窄居中显示
-    val widthModifier = if (compact) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth()
+    // compact 模式：横屏下不占满宽度，收窄居中显示，更加沉浸
+    val widthModifier = if (compact) Modifier.fillMaxWidth(0.32f) else Modifier.fillMaxWidth()
+    val barHeight = if (compact) 56.dp else 64.dp
+    val thumbSize = if (compact) 40.dp else 48.dp
 
     // 解析歌词：LRC 格式可按播放进度同步显示当前行；纯文本则整段滚动
     val parsedLyrics = remember(lyrics) { LyricsParser.parse(lyrics) }
@@ -113,7 +115,7 @@ fun PlayerBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(barHeight)
                 .clip(pillShape)
                 .shadow(
                     elevation = 20.dp,
@@ -154,7 +156,7 @@ fun PlayerBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 左侧：封面缩略图
-                CoverThumbnail(coverUri = coverUri, size = 48.dp)
+                CoverThumbnail(coverUri = coverUri, size = thumbSize)
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -194,8 +196,8 @@ fun PlayerBar(
                                 fontWeight = FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                // LRC 同步歌词因切换频繁不需 marquee；纯文本整段滚动
-                                modifier = if (isSynced) Modifier else Modifier.basicMarquee(
+                                // 同步和非同步歌词都统一加上 basicMarquee，如果长度超过容器，它会自动滚动显示，否则静止。
+                                modifier = Modifier.basicMarquee(
                                     velocity = 35.dp,
                                     delayMillis = 600
                                 )

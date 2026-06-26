@@ -1,8 +1,10 @@
 package com.localbeats.ui.theme
 
 import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
@@ -24,25 +26,49 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = Color(0xFFB0B0B0)
 )
 
+private val LightColorScheme = lightColorScheme(
+    primary = Color(0xFF6200EE),
+    secondary = Color(0xFF03DAC6),
+    tertiary = Color(0xFFB00020),
+    background = Color(0xFFF5F5F5),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFE0E0E0),
+    onPrimary = Color.White,
+    onSecondary = Color.Black,
+    onBackground = Color.Black,
+    onSurface = Color.Black,
+    onSurfaceVariant = Color(0xFF424242)
+)
+
 @Composable
-fun LocalBeatsTheme(content: @Composable () -> Unit) {
+fun LocalBeatsTheme(
+    themeMode: Int = 2, // 0=Auto, 1=Light, 2=Dark
+    content: @Composable () -> Unit
+) {
+    val isDark = when (themeMode) {
+        0 -> isSystemInDarkTheme()
+        1 -> false
+        else -> true
+    }
+    
+    val colorScheme = if (isDark) DarkColorScheme else LightColorScheme
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // 真正的 edge-to-edge：让内容延伸到状态栏/导航栏下方
             WindowCompat.setDecorFitsSystemWindows(window, false)
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
+                isAppearanceLightStatusBars = !isDark
+                isAppearanceLightNavigationBars = !isDark
             }
         }
     }
 
     MaterialTheme(
-        colorScheme = DarkColorScheme,
+        colorScheme = colorScheme,
         content = content
     )
 }

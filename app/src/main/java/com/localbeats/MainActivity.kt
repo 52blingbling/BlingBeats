@@ -59,6 +59,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import android.Manifest
+import android.os.Build
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.localbeats.ui.screens.CarouselScreen
 import com.localbeats.ui.screens.TileWallScreen
 import com.localbeats.ui.theme.LocalBeatsTheme
@@ -66,109 +83,98 @@ import com.localbeats.viewmodel.MusicViewModel
 
 class MainActivity : ComponentActivity() {
 
-    private var selectedFolderUri by mutableStateOf<Uri?>(null)
+    private var hasCompletedSetup by mutableStateOf(false)
+    private var showFolderSelection by mutableStateOf(false)
 
-    private val folderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            // 尝试获取持久化读写权限，失败则降级为只读，再失败则放弃
-            try {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                contentResolver.takePersistableUriPermission(uri, flags)
-            } catch (e: SecurityException) {
-                try {
-                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (e2: SecurityException) {
-                    return@registerForActivityResult
-                }
-            }
-            selectedFolderUri = uri
-            saveSelectedFolder(uri)
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            showFolderSelection = true
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 崩溃恢复机制：如果上次加载时崩溃，清除保存的 URI，让用户重新选择
+        val prefs = getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+        hasCompletedSetup = prefs.getBoolean("has_completed_setup", false)
+
         if (wasLoadingCrashed()) {
-            clearSelectedFolder()
             clearCrashFlag()
-            selectedFolderUri = null
-        } else {
-            selectedFolderUri = restoreSelectedFolder()?.also { uri ->
-                if (!isUriPermissionValid(uri)) {
-                    selectedFolderUri = null
-                    clearSelectedFolder()
-                }
-            }
         }
 
         setContent {
-            LocalBeatsTheme {
+            var themeMode by remember { mutableStateOf(prefs.getInt("theme_mode", 2)) }
+
+            LocalBeatsTheme(themeMode = themeMode) {
                 val viewModel: MusicViewModel = viewModel()
                 AnimatedVisibility(
-                    visible = selectedFolderUri == null,
+                    visible = !hasCompletedSetup && !showFolderSelection,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
-                    ImportFolderScreen(onSelectFolder = ::pickMusicFolder)
+                    WelcomeScreen(onScanMusic = ::requestStoragePermission)
                 }
                 AnimatedVisibility(
-                    visible = selectedFolderUri != null,
+                    visible = showFolderSelection,
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                ) {
+                    FolderSelectionScreen(
+                        viewModel = viewModel,
+                        currentThemeMode = themeMode,
+                        onThemeModeChange = { newMode ->
+                            themeMode = newMode
+                            getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+                                .edit()
+                                .putInt("theme_mode", newMode)
+                                .apply()
+                        },
+                        onConfirm = { ignored, filterShort ->
+                            saveIgnoredFolders(ignored, filterShort)
+                            hasCompletedSetup = true
+                            showFolderSelection = false
+                        }
+                    )
+                }
+                AnimatedVisibility(
+                    visible = hasCompletedSetup && !showFolderSelection,
                     enter = fadeIn(tween(400)),
                     exit = fadeOut()
                 ) {
                     MusicApp(
                         viewModel = viewModel,
-                        selectedFolderUri = selectedFolderUri,
-                        onImportFolderClick = ::pickMusicFolder
+                        onSettingsClick = { showFolderSelection = true }
                     )
                 }
             }
         }
     }
 
-    private fun pickMusicFolder() {
-        folderPickerLauncher.launch(null)
-    }
-
-    private fun saveSelectedFolder(uri: Uri) {
-        // 使用 commit() 同步写入，确保即使随后崩溃 URI 也能被保存
-        getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
-            .edit()
-            .putString("selected_folder_uri", uri.toString())
-            .commit()
-    }
-
-    private fun restoreSelectedFolder(): Uri? {
-        val storedValue = getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
-            .getString("selected_folder_uri", null) ?: return null
-        return try {
-            Uri.parse(storedValue)
-        } catch (_: Exception) {
-            null
+    private fun requestStoragePermission() {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            showFolderSelection = true
+        } else {
+            permissionLauncher.launch(permission)
         }
     }
 
-    private fun isUriPermissionValid(uri: Uri): Boolean {
-        return try {
-            val persisted = contentResolver.getPersistedUriPermissions()
-            persisted.any { it.uri == uri && it.isReadPermission }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun clearSelectedFolder() {
+    private fun saveIgnoredFolders(ignored: Set<String>, filterShort: Boolean) {
         getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .edit()
-            .remove("selected_folder_uri")
+            .putStringSet("ignored_folders", ignored)
+            .putBoolean("filter_short_audio", filterShort)
+            .putBoolean("has_completed_setup", true)
             .commit()
     }
 
-    /** 崩溃检测：在开始加载前设置标记，加载完成后清除。如果应用崩溃，标记会保留。 */
     private fun clearCrashFlag() {
         getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
             .edit()
@@ -185,8 +191,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MusicApp(
     viewModel: MusicViewModel,
-    selectedFolderUri: Uri?,
-    onImportFolderClick: () -> Unit
+    onSettingsClick: () -> Unit
 ) {
     val tracks by viewModel.tracks.collectAsState()
     val currentTrack by viewModel.player.currentTrack.collectAsState()
@@ -206,12 +211,11 @@ fun MusicApp(
         }
     }
 
-    LaunchedEffect(selectedFolderUri) {
-        if (selectedFolderUri != null) {
-            viewModel.loadMusicFromFolder(selectedFolderUri)
-        } else {
-            viewModel.clearTracks()
-        }
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE)
+        val ignored = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
+        val filterShort = prefs.getBoolean("filter_short_audio", true)
+        viewModel.loadMusicFromDevice(ignored, filterShort)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -237,7 +241,10 @@ fun MusicApp(
                 }
             }
         } else if (tracks.isEmpty()) {
-            ImportFolderScreen(onSelectFolder = onImportFolderClick)
+            // 如果扫描后没有歌曲，显示个提示
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = "未找到音频文件", color = MaterialTheme.colorScheme.onBackground)
+            }
         } else if (isLandscape) {
             CarouselScreen(
                 tracks = tracks,
@@ -264,8 +271,8 @@ fun MusicApp(
                 currentPosition = currentPosition,
                 duration = duration,
                 onSeek = { viewModel.seekTo(it) },
-                onImportClick = onImportFolderClick,
-                onRescan = { viewModel.rescanCurrentFolder() },
+                onImportClick = onSettingsClick,
+                onRescan = { viewModel.rescanDevice() },
                 onOrientationToggleClick = toggleOrientation
             )
         }
@@ -273,7 +280,7 @@ fun MusicApp(
 }
 
 @Composable
-fun ImportFolderScreen(onSelectFolder: () -> Unit) {
+fun WelcomeScreen(onScanMusic: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
 
     // 背景光晕动画
@@ -323,7 +330,7 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D)),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         // 背景光晕
@@ -399,7 +406,7 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
                 Spacer(modifier = Modifier.height(32.dp))
 
                 Text(
-                    text = "LocalBeats",
+                    text = "BlingBeats",
                     fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold,
                     style = androidx.compose.ui.text.TextStyle(
@@ -413,7 +420,7 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
 
                 Text(
                     text = "你的本地音乐播放器",
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center
                 )
@@ -421,8 +428,8 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "选择一个文件夹，我们会扫描其中\n所有支持的音频文件",
-                    color = Color.White.copy(alpha = 0.4f),
+                    text = "一键扫描手机中的所有本地音乐文件",
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
@@ -445,12 +452,12 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,
-                            onClick = onSelectFolder
+                            onClick = onScanMusic
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "选择音乐文件夹",
+                        text = "扫描本地音乐",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
@@ -461,11 +468,171 @@ fun ImportFolderScreen(onSelectFolder: () -> Unit) {
 
                 Text(
                     text = "支持 MP3 · M4A · FLAC · WAV · OGG · AAC",
-                    color = Color.White.copy(alpha = 0.3f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f),
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FolderSelectionScreen(
+    viewModel: MusicViewModel,
+    currentThemeMode: Int,
+    onThemeModeChange: (Int) -> Unit,
+    onConfirm: (Set<String>, Boolean) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var folders by remember { mutableStateOf<List<String>>(emptyList()) }
+    var ignoredFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var filterShortAudio by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            folders = viewModel.getAudioFolders()
+            val prefs = context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE)
+            ignoredFolders = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
+            filterShortAudio = prefs.getBoolean("filter_short_audio", true)
+        }
+        isLoading = false
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("设置与扫描文件夹", color = MaterialTheme.colorScheme.onBackground) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFFBB86FC))
+                        .clickable { onConfirm(ignoredFolders, filterShortAudio) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("完成", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFFBB86FC))
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                item {
+                    // 主题切换
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Text(text = "外观与主题", color = MaterialTheme.colorScheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceAround
+                        ) {
+                            ThemeOption(label = "跟随系统", selected = currentThemeMode == 0, onClick = { onThemeModeChange(0) })
+                            ThemeOption(label = "浅色模式", selected = currentThemeMode == 1, onClick = { onThemeModeChange(1) })
+                            ThemeOption(label = "深色模式", selected = currentThemeMode == 2, onClick = { onThemeModeChange(2) })
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)))
+                    
+                    // 过滤短音频
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { filterShortAudio = !filterShortAudio }
+                            .padding(horizontal = 16.dp, vertical = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(text = "过滤短音频", color = MaterialTheme.colorScheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text(text = "不展示 60 秒以下的音频文件", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = filterShortAudio,
+                            onCheckedChange = { filterShortAudio = it },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFFBB86FC),
+                                checkedTrackColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                            )
+                        )
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)))
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                items(folders) { folder ->
+                    val isChecked = !ignoredFolders.contains(folder)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                ignoredFolders = if (isChecked) {
+                                    ignoredFolders + folder
+                                } else {
+                                    ignoredFolders - folder
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFFBB86FC),
+                                uncheckedColor = Color.Gray,
+                                checkmarkColor = Color.Black
+                            )
+                        )
+                        Spacer(modifier = Modifier.size(16.dp))
+                        Column {
+                            val folderName = folder.substringAfterLast("/")
+                            Text(text = folderName, color = MaterialTheme.colorScheme.onBackground, fontSize = 16.sp)
+                            Text(text = folder, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ThemeOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onClick)) {
+        RadioButton(
+            checked = selected,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFBB86FC))
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text = label, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
     }
 }

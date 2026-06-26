@@ -35,10 +35,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
     init {
-        // 每 500ms 轮询播放进度，更新进度条
+        // 每 50ms 轮询播放进度，高频刷新保证歌词同步极其精准（无延迟感）
         viewModelScope.launch {
             while (true) {
-                delay(500)
+                delay(50)
                 // 仅在有当前曲目时才访问 ExoPlayer，避免不必要的访问
                 if (_tracks.value.isNotEmpty()) {
                     try {
@@ -54,7 +54,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val crashHandler = CoroutineExceptionHandler { _, _ -> }
 
-    fun loadMusicFromFolder(folderUri: Uri?) {
+    fun loadMusicFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean) {
         // 在主线程同步设置崩溃标记，确保在任何崩溃前写入
         prefs.edit().putBoolean("loading_crashed", true).commit()
 
@@ -62,7 +62,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 _isLoading.value = true
                 val musicTracks = try {
-                    repository.loadMusicTracksFromFolder(folderUri)
+                    repository.loadMusicTracksFromDevice(ignoredFolders, filterShortAudio)
                 } catch (_: Throwable) {
                     // 捕获 Throwable 而非 Exception，包括 OutOfMemoryError 等
                     emptyList()
@@ -86,14 +86,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 重新扫描当前文件夹：强制重新加载音乐文件并提取歌词等元数据。
+     * 重新扫描音乐：强制重新加载音乐文件并提取歌词等元数据。
      * 用于歌词提取逻辑更新后，刷新已扫描曲目的歌词字段。
      * 会重置播放列表，但保留当前播放曲目的位置（如果仍在列表中）。
      */
-    fun rescanCurrentFolder() {
-        val savedUri = prefs.getString("selected_folder_uri", null) ?: return
-        val folderUri = try { Uri.parse(savedUri) } catch (_: Throwable) { return }
-        loadMusicFromFolder(folderUri)
+    fun rescanDevice() {
+        val ignoredFolders = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
+        val filterShortAudio = prefs.getBoolean("filter_short_audio", true)
+        loadMusicFromDevice(ignoredFolders, filterShortAudio)
+    }
+
+    fun getAudioFolders(): List<String> {
+        return repository.scanAudioFolders()
     }
 
     fun clearTracks() {

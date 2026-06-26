@@ -122,12 +122,12 @@ fun CarouselScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D))
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
     ) {
         if (tracks.isEmpty()) {
             Text(
                 text = "No music found",
-                color = Color.White.copy(alpha = 0.5f),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                 fontSize = 16.sp,
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -185,7 +185,7 @@ fun CarouselScreen(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0xFF0D0D0D).copy(alpha = 0.5f),
+                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
                                 Color.Transparent
                             ),
                             startY = 0f,
