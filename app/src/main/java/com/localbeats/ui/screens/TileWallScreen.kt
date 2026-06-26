@@ -151,6 +151,13 @@ fun TileWallScreen(
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
     var bottomInsetPx by remember { mutableFloatStateOf(0f) }
+    var offsetInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(topInsetPx) {
+        if (!offsetInitialized && topInsetPx > 0f) {
+            offsetY = topInsetPx
+            offsetInitialized = true
+        }
+    }
 
     // pointerInput(Unit) 的 lambda 只创建一次，用 rememberUpdatedState 始终读取最新值
     val currentTracks by rememberUpdatedState(tracks)
@@ -180,25 +187,16 @@ fun TileWallScreen(
                             viewportWidth * 0.25f
                         )
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            -maxScrollUp - usableHeight * 0.25f,
-                            (usableHeight - 100f).coerceAtLeast(0f)
+                            topInsetPx - maxScrollUp - viewportHeight * 0.25f,
+                            (viewportHeight - bottomInsetPx - 100f).coerceAtLeast(topInsetPx)
                         )
                     }
                 )
             }
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    top = with(LocalDensity.current) { topInsetPx.toDp() },
-                    bottom = with(LocalDensity.current) { bottomInsetPx.toDp() }
-                )
-                .clipToBounds()
-        ) {
-            Layout(
-                content = {
-                    tracks.forEach { track ->
+        Layout(
+            content = {
+                tracks.forEach { track ->
                     key(track.id) {
                         val span = tileSpansMap[track.id] ?: (1 to 1)
                         val interactionSource = remember { MutableInteractionSource() }
@@ -265,7 +263,6 @@ fun TileWallScreen(
             modifier = Modifier
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
         )
-        }
 
         // 顶部浮层标题栏
         Box(
