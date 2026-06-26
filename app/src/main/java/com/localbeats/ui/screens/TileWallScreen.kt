@@ -162,21 +162,17 @@ fun TileWallScreen(
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
     val currentOnReorder by rememberUpdatedState(onReorder)
 
-    // 性能优化核心：只渲染视野内（加两倍格子缓冲）的磁贴，避免 Coil 一次性加载几千张封面导致卡顿
-    // 如果还没有测量出容器大小，默认展示所有，防止初次显示空白
-    val visibleTracks = if (containerWidth == 0 || containerHeight == 0) {
+    // 性能优化核心：小列表（少于 100 首）完全不剔除，确保绝对稳定；大列表仅做 Y 轴大缓冲区过滤，避免 Coil 加载过多封面
+    val visibleTracks = if (tracks.size <= 100 || containerWidth == 0 || containerHeight == 0) {
         tracks
     } else {
+        val hPx = containerHeight.toFloat()
         tracks.filter { track ->
             val pos = tilePositions[track.id] ?: (0 to 0)
             val span = tileSpansMap[track.id] ?: (1 to 1)
-            val x = pos.first * cellPx + offsetX
             val y = pos.second * cellPx + offsetY
-            val w = span.first * cellPx
             val h = span.second * cellPx
-            val buffer = cellPx * 2f
-            x + w > -buffer && x < containerWidth + buffer &&
-            y + h > -buffer && y < containerHeight + buffer
+            y + h > -hPx * 2f && y < hPx * 3f
         }
     }
 

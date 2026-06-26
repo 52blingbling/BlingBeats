@@ -150,7 +150,6 @@ fun CarouselScreen(
     val screenHeightDp = configuration.screenHeightDp.dp
     // 动态计算封面大小，将顶部标题和底部歌词推至屏幕边缘，最大化封面尺寸以展现画报级沉浸感
     val coverSize = (screenHeightDp - 70.dp).coerceAtMost(390.dp).coerceAtLeast(240.dp)
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -167,38 +166,31 @@ fun CarouselScreen(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                // 不使用 contentPadding peek，改用 translationX 实现真正的堆叠
                 contentPadding = PaddingValues(horizontal = 0.dp),
-                // 自定义 fling：基于速度的快→慢减速吸附
                 flingBehavior = flingBehavior,
-                // 预渲染左右各 2 页，保证堆叠邻居可见
-                beyondBoundsPageCount = 2
+                // 预加载左右各 3 页，确保 5 个可见磁贴在滑动中全部保持激活状态，根本上解决动态销毁导致的闪烁
+                beyondBoundsPageCount = 3
             ) { page ->
                 val track = trackAt(page) ?: return@HorizontalPager
-                // pageOffset：当前页相对此页的偏移。左侧页 pageOffset > 0，右侧页 < 0
-                val pageOffset =
-                    (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                 val absOffset = abs(pageOffset)
-
+ 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        // 当前页 zIndex 最高（绘制在最上层），邻居越远越靠后
                         .zIndex(10f - absOffset)
                         .graphicsLayer {
-                            // 堆叠：将相邻页拉向中心（保留 ~15% 露出量）
-                            translationX = pageOffset * size.width * 0.85f
-                            // 中心放大，邻居缩小
-                            val s = (1f - absOffset * 0.18f).coerceAtLeast(0.45f)
+                            // 堆叠：拉近间距实现 5 层层叠递进的 3D 视觉深度
+                            translationX = pageOffset * size.width * 0.84f
+                            // 渐进缩小：中心 1.0，第一圈 0.8，第二圈 0.6
+                            val s = (1f - absOffset * 0.20f).coerceIn(0.5f, 1f)
                             scaleX = s
                             scaleY = s
-                            // 3D 旋转：左侧向右倾斜（rotationY < 0，右边缘朝向观察者），
-                            // 右侧向左倾斜（rotationY > 0，左边缘朝向观察者）
-                            rotationY = pageOffset * -35f
-                            // cameraDistance 越小透视越强
+                            // 3D 旋转倾斜度
+                            rotationY = pageOffset * -28f
                             cameraDistance = 8f * density
-                            // 邻居略淡出
-                            alpha = (1f - absOffset * 0.35f).coerceAtLeast(0.25f)
+                            // 渐变透明度：中心 1.0，第一圈 0.67，第二圈 0.34，第三圈及之外（absOffset >= 3）完全透明
+                            alpha = (1f - absOffset * 0.33f).coerceIn(0f, 1f)
                         }
                 ) {
                     CarouselItem(
@@ -210,6 +202,7 @@ fun CarouselScreen(
                     )
                 }
             }
+        }
 
             // 顶部渐变遮罩与标题
             Box(
