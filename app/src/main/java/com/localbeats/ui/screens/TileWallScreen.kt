@@ -32,9 +32,11 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
@@ -107,7 +109,13 @@ fun TileWallScreen(
     // 设置菜单展开状态
     var menuExpanded by remember { mutableStateOf(false) }
 
-    val tileSpans = remember(tracks) { tracks.mapIndexed(::computeSpan) }
+    val tileSpans = remember(tracks) { tracks.map { computeSpan(it) } }
+    // rememberUpdatedState 让 pointerInput(Unit) 内部始终读取最新的 tracks/spans/回调，
+    // 避免重排或重扫后 pointerInput 仍捕获旧引用导致点击错歌、拖动命中失效
+    val currentTracks by rememberUpdatedState(tracks)
+    val currentTileSpans by rememberUpdatedState(tileSpans)
+    val currentOnTrackClick by rememberUpdatedState(onTrackClick)
+    val currentOnReorder by rememberUpdatedState(onReorder)
 
     // 平移偏移（整个磁贴墙相对视口的位移）
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -137,6 +145,8 @@ fun TileWallScreen(
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    // 拖动过程中手指悬停的目标磁贴索引（用于高亮，抬起时才真正 reorder，避免拖动中 reflow）
+    var dragTargetIndex by remember { mutableStateOf<Int?>(null) }
 
     Box(
         modifier = modifier
@@ -150,8 +160,9 @@ fun TileWallScreen(
             // 统一手势识别（单 pointerInput，避免与 clickable 冲突）：
             //   轻点（按下后短时间抬起、未移动）→ 播放对应磁贴
             //   移动超过 touchSlop → 平移磁贴墙
-            //   静止超过 longPressMs → 进入磁贴拖动模式，跟随手指交换位置
+            //   静止超过 longPressMs → 进入磁贴拖动模式，抬起时才 reorder（避免拖动中 reflow 乱跳）
             // 用 withTimeoutOrNull 让手指静止时也能可靠触发长按（awaitPointerEvent 静止时不返回）
+            // 通过 rememberUpdatedState 的 current* 引用，始终读取最新的 tracks/spans/回调
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -174,44 +185,20 @@ fun TileWallScreen(
                             val remaining = longPressMs - elapsed
                             if (remaining <= 0) {
                                 // 长按超时：进入磁贴拖动模式
-                                if (draggedIndex == null) {
-                                    val xInContent = downPosition.x - offsetX
-                                    val yInContent = downPosition.y - offsetY
-                                    for (i in placements.indices) {
-                                        val (px, py) = placements[i]
-                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
-                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
-                                            yInContent >= py && yInContent < py + sh * cellPx
-                                        ) {
-                                            draggedIndex = i
-                                            dragOffsetX = 0f
-                                            dragOffsetY = 0f
-                                            break
-                                        }
-                                    }
-                                }
+                                draggedIndex = findTileAt(downPosition, offsetX, offsetY, placements, currentTileSpans, cellPx)
+                                dragOffsetX = 0f
+                                dragOffsetY = 0f
+                                dragTargetIndex = null
                                 mode = 2
                                 break
                             }
                             val event = withTimeoutOrNull(remaining) { awaitPointerEvent() }
                             if (event == null) {
                                 // 超时：进入磁贴拖动模式
-                                if (draggedIndex == null) {
-                                    val xInContent = downPosition.x - offsetX
-                                    val yInContent = downPosition.y - offsetY
-                                    for (i in placements.indices) {
-                                        val (px, py) = placements[i]
-                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
-                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
-                                            yInContent >= py && yInContent < py + sh * cellPx
-                                        ) {
-                                            draggedIndex = i
-                                            dragOffsetX = 0f
-                                            dragOffsetY = 0f
-                                            break
-                                        }
-                                    }
-                                }
+                                draggedIndex = findTileAt(downPosition, offsetX, offsetY, placements, currentTileSpans, cellPx)
+                                dragOffsetX = 0f
+                                dragOffsetY = 0f
+                                dragTargetIndex = null
                                 mode = 2
                                 break
                             }
@@ -219,17 +206,9 @@ fun TileWallScreen(
                             if (!change.pressed) {
                                 // 抬起：若几乎未移动则视为轻点 → 播放
                                 if (moved < touchSlop) {
-                                    val xInContent = downPosition.x - offsetX
-                                    val yInContent = downPosition.y - offsetY
-                                    for (i in placements.indices) {
-                                        val (px, py) = placements[i]
-                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
-                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
-                                            yInContent >= py && yInContent < py + sh * cellPx
-                                        ) {
-                                            tracks.getOrNull(i)?.let { onTrackClick(it) }
-                                            break
-                                        }
+                                    val idx = findTileAt(downPosition, offsetX, offsetY, placements, currentTileSpans, cellPx)
+                                    if (idx != null) {
+                                        currentTracks.getOrNull(idx)?.let { currentOnTrackClick(it) }
                                     }
                                 }
                                 break
@@ -272,42 +251,45 @@ fun TileWallScreen(
                                     offsetX = newX
                                     offsetY = newY
                                 } else {
-                                    // 磁贴拖动：跟随手指并实时 swap
+                                    // 磁贴拖动：跟随手指移动，检测目标高亮，但不 reorder（抬起时才换位）
                                     change.consume()
                                     dragOffsetX += dragX
                                     dragOffsetY += dragY
 
                                     val draggedIdx = draggedIndex ?: continue
                                     val placement = placements.getOrNull(draggedIdx) ?: continue
-                                    val span = tileSpans.getOrNull(draggedIdx) ?: continue
+                                    val span = currentTileSpans.getOrNull(draggedIdx) ?: continue
                                     val draggedCenterX = placement.first + span.first * cellPx / 2 + dragOffsetX
                                     val draggedCenterY = placement.second + span.second * cellPx / 2 + dragOffsetY
 
+                                    var hit: Int? = null
                                     for (i in placements.indices) {
                                         if (i == draggedIdx) continue
                                         val (px, py) = placements[i]
-                                        val (sw, sh) = tileSpans[i]
+                                        val (sw, sh) = currentTileSpans[i]
                                         if (draggedCenterX >= px && draggedCenterX < px + sw * cellPx &&
                                             draggedCenterY >= py && draggedCenterY < py + sh * cellPx
                                         ) {
-                                            val oldDraggedPlacement = placements[draggedIdx]
-                                            val oldTargetPlacement = placements[i]
-                                            onReorder(draggedIdx, i)
-                                            draggedIndex = i
-                                            dragOffsetX += oldDraggedPlacement.first - oldTargetPlacement.first
-                                            dragOffsetY += oldDraggedPlacement.second - oldTargetPlacement.second
+                                            hit = i
                                             break
                                         }
                                     }
+                                    dragTargetIndex = hit
                                 }
                             }
                         }
 
-                        // 抬起：结束磁贴拖动
+                        // 抬起：若处于磁贴拖动模式且检测到目标，执行一次性 reorder
                         if (draggedIndex != null) {
+                            val from = draggedIndex
+                            val to = dragTargetIndex
+                            if (to != null && to != from && from in currentTracks.indices && to in currentTracks.indices) {
+                                currentOnReorder(from, to)
+                            }
                             draggedIndex = null
                             dragOffsetX = 0f
                             dragOffsetY = 0f
+                            dragTargetIndex = null
                         }
                     }
                 }
@@ -318,6 +300,7 @@ fun TileWallScreen(
                 tracks.forEachIndexed { index, track ->
                     val span = tileSpans[index]
                     val isDragged = draggedIndex == index
+                    val isDropTarget = dragTargetIndex == index
                     Box(
                         modifier = Modifier
                             .layoutId(index)
@@ -332,6 +315,15 @@ fun TileWallScreen(
                                     alpha = 0.95f
                                 }
                             }
+                            .then(
+                                if (isDropTarget) {
+                                    Modifier.border(
+                                        width = 3.dp,
+                                        color = Color(0xFFBB86FC),
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                } else Modifier
+                            )
                             .clip(RoundedCornerShape(0.dp))
                     ) {
                         TileContent(
@@ -524,13 +516,41 @@ fun TileWallScreen(
 }
 
 /** 计算磁贴的 span（横向、纵向格子数），制造大小不一的视觉节奏 */
-private fun computeSpan(index: Int, track: MusicTrack): Pair<Int, Int> {
-    return when (index % 7) {
+private fun computeSpan(track: MusicTrack): Pair<Int, Int> {
+    // 按 track.id 取模决定尺寸，使每个磁贴的尺寸稳定（重排时不变），避免拖动时整体 reflow 混乱
+    val k = ((track.id % 7) + 7) % 7
+    return when (k.toInt()) {
         0 -> 2 to 2   // 大磁贴
         3 -> 2 to 1   // 宽磁贴
         5 -> 1 to 2   // 高磁贴
         else -> 1 to 1
     }
+}
+
+/**
+ * 在磁贴墙坐标系中查找包含指定屏幕坐标的磁贴索引。
+ * 屏幕坐标 → 内容坐标：减去 offset；再与各磁贴的 placement + span*cellPx 矩形比对。
+ */
+private fun findTileAt(
+    screenPosition: androidx.compose.ui.geometry.Offset,
+    offsetX: Float,
+    offsetY: Float,
+    placements: List<Pair<Float, Float>>,
+    tileSpans: List<Pair<Int, Int>>,
+    cellPx: Float
+): Int? {
+    val xInContent = screenPosition.x - offsetX
+    val yInContent = screenPosition.y - offsetY
+    for (i in placements.indices) {
+        val (px, py) = placements[i]
+        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
+        if (xInContent >= px && xInContent < px + sw * cellPx &&
+            yInContent >= py && yInContent < py + sh * cellPx
+        ) {
+            return i
+        }
+    }
+    return null
 }
 
 private fun canPlace(occupied: Array<BooleanArray>, col: Int, row: Int, w: Int, h: Int, columns: Int, maxRows: Int): Boolean {

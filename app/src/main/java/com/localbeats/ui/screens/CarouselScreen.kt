@@ -54,12 +54,16 @@ fun CarouselScreen(
     onSeek: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 循环切换：用足够大的虚拟页数实现无限循环，page 取模映射到真实曲目
-    val basePage = 1_000_000
+    // 循环切换：用较大的虚拟页数实现近似无限循环，page 取模映射到真实曲目。
+    // 不能用 Int.MAX_VALUE：HorizontalPager 的滚动范围 = (pageCount-1)*pageWidth 会溢出，
+    // 导致无法滑动。100k 页足够（约 5 万次循环），且 pageCount*pageWidth 远小于 Int.MAX_VALUE。
+    val virtualCount = if (tracks.isEmpty()) 0 else if (tracks.size == 1) 1 else 100_000
     val startIndex = tracks.indexOfFirst { it.id == currentTrack?.id }.coerceAtLeast(0)
+    // 初始页位于中间，左右各约 5 万页可滑，足够循环
+    val startVirtual = if (virtualCount <= 1) 0 else virtualCount / 2 + startIndex
     val pagerState = rememberPagerState(
-        initialPage = basePage + startIndex,
-        pageCount = { if (tracks.isEmpty()) 0 else Int.MAX_VALUE }
+        initialPage = startVirtual,
+        pageCount = { virtualCount }
     )
 
     // 虚拟页 → 真实曲目（取模，兼容负数）
