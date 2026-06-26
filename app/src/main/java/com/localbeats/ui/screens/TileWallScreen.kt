@@ -166,6 +166,23 @@ fun TileWallScreen(
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
     val currentOnReorder by rememberUpdatedState(onReorder)
 
+    // 性能优化核心：只渲染视野内（加两倍格子缓冲）的磁贴，避免 Coil 一次性加载几千张封面导致卡顿
+    val visibleTracks by remember(tracks, tilePositions, columns) {
+        androidx.compose.runtime.derivedStateOf {
+            tracks.filter { track ->
+                val pos = tilePositions[track.id] ?: (0 to 0)
+                val span = tileSpansMap[track.id] ?: (1 to 1)
+                val x = pos.first * cellPx + offsetX
+                val y = pos.second * cellPx + offsetY
+                val w = span.first * cellPx
+                val h = span.second * cellPx
+                val buffer = cellPx * 2f
+                x + w > -buffer && x < screenWidthPx + buffer &&
+                y + h > -buffer && y < screenHeightPx + buffer
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -181,21 +198,22 @@ fun TileWallScreen(
                             -maxX - screenWidthPx * 0.3f,
                             screenWidthPx * 0.3f
                         )
-                        // Y轴限制：
-                        // 下拉极限：允许把第一排磁贴拖到屏幕底部（悬浮播放条之上），所以最大值是 screenHeightPx - bottomInsetPx - 100f
-                        // 上划极限：允许把最后一排磁贴拖到屏幕顶部，所以最小值是 -contentHeight + topInsetPx
-                        // 为了允许弹性手感，再各给 30% 的屏幕高度作为越界缓冲
-                        offsetY = (offsetY + dragAmount.y).coerceIn(
-                            -contentHeight + topInsetPx - screenHeightPx * 0.3f,
-                            screenHeightPx - bottomInsetPx - 100f
-                        )
+                        // Y轴限制：标准的滚动视图边界，外加 20% 的屏幕高度作为弹性越界缓冲
+                        val playerBarHeight = 100f
+                        val maxScrollUp = topInsetPx
+                        val minScrollDown = kotlin.math.min(topInsetPx, screenHeightPx - bottomInsetPx - playerBarHeight - contentHeight)
+                        
+                        val minY = minScrollDown - screenHeightPx * 0.2f
+                        val maxY = maxScrollUp + screenHeightPx * 0.2f
+                        
+                        offsetY = (offsetY + dragAmount.y).coerceIn(minY, maxY)
                     }
                 )
             }
     ) {
         Layout(
             content = {
-                tracks.forEach { track ->
+                visibleTracks.forEach { track ->
                     key(track.id) {
                         val span = tileSpansMap[track.id] ?: (1 to 1)
                         val interactionSource = remember { MutableInteractionSource() }
@@ -238,7 +256,7 @@ fun TileWallScreen(
                 measurables.forEach { m ->
                     (m.layoutId as? Long)?.let { byId[it] = m }
                 }
-                val placeables = tracks.mapNotNull { track ->
+                val placeables = visibleTracks.mapNotNull { track ->
                     val m = byId[track.id] ?: return@mapNotNull null
                     val span = tileSpansMap[track.id] ?: (1 to 1)
                     val w = (span.first * cellPx).toInt()

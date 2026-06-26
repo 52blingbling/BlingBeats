@@ -12,6 +12,20 @@ import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import com.localbeats.data.lyrics.LyricsParser
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -119,6 +133,19 @@ fun CarouselScreen(
         snapPositionalThreshold = 0.5f
     )
 
+    // 解析歌词
+    val parsedLyrics = remember(currentTrack?.lyrics) { LyricsParser.parse(currentTrack?.lyrics) }
+    val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
+    val currentLyricIndex = if (isSynced) {
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition)
+        if (idx < 0) 0 else idx
+    } else -1
+    val currentLyricText = when {
+        isSynced && currentLyricIndex in parsedLyrics.indices -> parsedLyrics[currentLyricIndex].text
+        !isSynced && parsedLyrics.isNotEmpty() -> parsedLyrics.joinToString("  ·  ") { it.text }
+        else -> null
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -178,21 +205,65 @@ fun CarouselScreen(
                 }
             }
 
-            // 顶部渐变遮罩（仅作视觉氛围，不再显示文字信息）
+            // 顶部渐变遮罩与标题
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
+                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
+                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.4f),
                                 Color.Transparent
-                            ),
-                            startY = 0f,
-                            endY = 160f
+                            )
                         )
                     )
-            )
+                    .statusBarsPadding()
+                    .padding(top = 16.dp, bottom = 32.dp)
+            ) {
+                Text(
+                    text = currentTrack?.title ?: "未选择歌曲",
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 32.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // 底部歌词
+            if (currentLyricText != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp) // 悬浮在 PlayerBar 上方
+                        .padding(horizontal = 24.dp)
+                ) {
+                    AnimatedContent(
+                        targetState = currentLyricText,
+                        transitionSpec = {
+                            (slideInVertically { it / 2 } + fadeIn(tween(200)))
+                                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
+                        },
+                        label = "lyric_line",
+                        modifier = Modifier.align(Alignment.Center)
+                    ) { line ->
+                        Text(
+                            text = line,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
+                        )
+                    }
+                }
+            }
         }
 
         PlayerBar(

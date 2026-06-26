@@ -85,7 +85,7 @@ fun PlayerBar(
     // compact 模式：横屏下让胶囊变短（宽度收窄），更精致
     val horizontalPadding = if (compact) 24.dp else 16.dp
     // compact 模式：横屏下不占满宽度，收窄居中显示，更加沉浸
-    val widthModifier = if (compact) Modifier.fillMaxWidth(0.32f) else Modifier.fillMaxWidth()
+    val widthModifier = if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth()
     val barHeight = if (compact) 56.dp else 64.dp
     val thumbSize = if (compact) 40.dp else 48.dp
 
@@ -114,7 +114,7 @@ fun PlayerBar(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .then(if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
                 .height(barHeight)
                 .clip(pillShape)
                 .shadow(
@@ -155,70 +155,75 @@ fun PlayerBar(
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 左侧：封面缩略图
-                CoverThumbnail(coverUri = coverUri, size = thumbSize)
+                if (!compact) {
+                    // 左侧：封面缩略图
+                    CoverThumbnail(coverUri = coverUri, size = thumbSize)
 
-                Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                // 左侧：歌曲信息（标题 + 歌词/艺术家）
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        // 标题超长时 marquee 滚动
-                        modifier = Modifier.basicMarquee(
-                            velocity = 40.dp,
-                            delayMillis = 800
+                    // 左侧：歌曲信息（标题 + 歌词/艺术家）
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            // 标题超长时 marquee 滚动
+                            modifier = Modifier.basicMarquee(
+                                velocity = 40.dp,
+                                delayMillis = 800
+                            )
                         )
-                    )
 
-                    // 第二行：优先显示歌词；无歌词时回退到艺术家
-                    if (currentLyricText != null) {
-                        AnimatedContent(
-                            targetState = currentLyricText,
-                            transitionSpec = {
-                                (slideInVertically { it / 2 } + fadeIn(tween(200)))
-                                    .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
-                            },
-                            label = "lyric_line"
-                        ) { line ->
+                        // 第二行：优先显示歌词；无歌词时回退到艺术家
+                        if (currentLyricText != null) {
+                            AnimatedContent(
+                                targetState = currentLyricText,
+                                transitionSpec = {
+                                    (slideInVertically { it / 2 } + fadeIn(tween(200)))
+                                        .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
+                                },
+                                label = "lyric_line"
+                            ) { line ->
+                                Text(
+                                    text = line,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    // 同步和非同步歌词都统一加上 basicMarquee，如果长度超过容器，它会自动滚动显示，否则静止。
+                                    modifier = Modifier.basicMarquee(
+                                        velocity = 35.dp,
+                                        delayMillis = 600
+                                    )
+                                )
+                            }
+                        } else if (!artist.isNullOrBlank()) {
                             Text(
-                                text = line,
-                                color = Color.White.copy(alpha = 0.85f),
+                                text = artist,
+                                color = Color.White.copy(alpha = 0.6f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Normal,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                // 同步和非同步歌词都统一加上 basicMarquee，如果长度超过容器，它会自动滚动显示，否则静止。
-                                modifier = Modifier.basicMarquee(
-                                    velocity = 35.dp,
-                                    delayMillis = 600
-                                )
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                    } else if (!artist.isNullOrBlank()) {
-                        Text(
-                            text = artist,
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
                 // 右侧：播放/暂停按钮 及 旋转按钮
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = if (compact) Arrangement.Center else Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     if (onOrientationToggleClick != null) {
                         Box(
                             modifier = Modifier

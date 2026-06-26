@@ -213,6 +213,20 @@ fun MusicApp(
         }
     }
 
+    LaunchedEffect(isLandscape) {
+        activity?.window?.let { window ->
+            val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            if (isLandscape) {
+                insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE)
         val ignored = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
