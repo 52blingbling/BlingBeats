@@ -178,20 +178,10 @@ fun TileWallScreen(
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val wPx = containerWidth.toFloat()
-                        val hPx = containerHeight.toFloat()
-                        val maxX = max(0f, contentWidth - wPx)
-                        // X轴限制：内容正常滑动的左右边界，左右最多允许额外滑出 240 像素的越界缓冲
-                        offsetX = (offsetX + dragAmount.x).coerceIn(
-                            -maxX - 240f,
-                            240f
-                        )
-                        // maxY：向下最多允许拖拽 1500 像素，确保顶部磁贴可以被拉下，且不会拉出太多空白
-                        val maxY = 1500f
-                        // minY：向上滚出所有内容的边界，加上 1500 像素的额外上滑越界缓冲
-                        val minY = -(contentHeight - hPx).coerceAtLeast(0f) - 1500f
-                        // 应用拖动位移并限制在计算好的 [minY, maxY] 范围内
-                        offsetY = (offsetY + dragAmount.y).coerceIn(minY, maxY)
+                        // 左右最多滑动 240 像素 (直接以可移动的像素作约束)
+                        offsetX = (offsetX + dragAmount.x).coerceIn(-240f, 240f)
+                        // 上下最多拖动 1000 像素 (直接以可移动的像素作约束)
+                        offsetY = (offsetY + dragAmount.y).coerceIn(-1000f, 1000f)
                     }
                 )
             }
