@@ -141,6 +141,7 @@ fun TileWallScreen(
 
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
+    var bottomInsetPx by remember { mutableFloatStateOf(0f) }
     var offsetInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(topInsetPx) {
         if (!offsetInitialized && topInsetPx > 0f) {
@@ -170,19 +171,7 @@ fun TileWallScreen(
                 viewportWidth = coords.size.width.toFloat()
                 viewportHeight = coords.size.height.toFloat()
             }
-            // 1) 轻点 → 播放对应磁贴（按 track.id 命中）
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    val id = findTrackIdAt(
-                        offset, offsetX, offsetY,
-                        currentTracks, tilePositions, currentTileSpans, cellPx
-                    )
-                    if (id != null) {
-                        currentTracks.firstOrNull { it.id == id }?.let { currentOnTrackClick(it) }
-                    }
-                }
-            }
-            // 2) 普通拖动 → 平移磁贴墙（长按拖动接管后会取消平移）
+            // 平移磁贴墙（长按拖动接管后会取消平移）
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
@@ -190,7 +179,7 @@ fun TileWallScreen(
                         change.consume()
                         val maxX = max(0f, contentWidth - viewportWidth)
                         val restY = topInsetPx
-                        val usableHeight = (viewportHeight - topInsetPx).coerceAtLeast(0f)
+                        val usableHeight = (viewportHeight - topInsetPx - bottomInsetPx).coerceAtLeast(0f)
                         val maxScrollUp = max(0f, contentHeight - usableHeight)
                         offsetX = (offsetX + dragAmount.x).coerceIn(
                             -maxX - viewportWidth * 0.25f,
@@ -200,71 +189,6 @@ fun TileWallScreen(
                             restY - maxScrollUp - viewportHeight * 0.15f,
                             restY + viewportHeight * 0.15f
                         )
-                    }
-                )
-            }
-            // 3) 长按后拖动 → 磁贴交换（Compose 处理长按判定，避免轻微抖动误判）
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        val id = findTrackIdAt(
-                            offset, offsetX, offsetY,
-                            currentTracks, tilePositions, currentTileSpans, cellPx
-                        )
-                        draggedId = id
-                        dragOffsetX = 0f
-                        dragOffsetY = 0f
-                        dragTargetId = null
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        dragOffsetX += dragAmount.x
-                        dragOffsetY += dragAmount.y
-                        val dId = draggedId ?: return@detectDragGesturesAfterLongPress
-                        val pos = tilePositions[dId] ?: return@detectDragGesturesAfterLongPress
-                        val span = currentTileSpans[dId] ?: return@detectDragGesturesAfterLongPress
-                        val cx = pos.first * cellPx + span.first * cellPx / 2 + dragOffsetX
-                        val cy = pos.second * cellPx + span.second * cellPx / 2 + dragOffsetY
-                        var hit: Long? = null
-                        for (t in currentTracks) {
-                            if (t.id == dId) continue
-                            val p = tilePositions[t.id] ?: continue
-                            val s = currentTileSpans[t.id] ?: continue
-                            if (cx >= p.first * cellPx && cx < (p.first + s.first) * cellPx &&
-                                cy >= p.second * cellPx && cy < (p.second + s.second) * cellPx
-                            ) {
-                                hit = t.id
-                                break
-                            }
-                        }
-                        dragTargetId = hit
-                    },
-                    onDragEnd = {
-                        val from = draggedId
-                        val to = dragTargetId
-                        if (from != null && to != null && from != to) {
-                            // 仅交换对应项的位置，不 reflow
-                            val pa = tilePositions[from]
-                            val pb = tilePositions[to]
-                            if (pa != null && pb != null) {
-                                tilePositions[from] = pb
-                                tilePositions[to] = pa
-                            }
-                            // 持久化顺序：用 tracks 中的索引
-                            val fromIdx = currentTracks.indexOfFirst { it.id == from }
-                            val toIdx = currentTracks.indexOfFirst { it.id == to }
-                            if (fromIdx >= 0 && toIdx >= 0) currentOnReorder(fromIdx, toIdx)
-                        }
-                        draggedId = null
-                        dragOffsetX = 0f
-                        dragOffsetY = 0f
-                        dragTargetId = null
-                    },
-                    onDragCancel = {
-                        draggedId = null
-                        dragOffsetX = 0f
-                        dragOffsetY = 0f
-                        dragTargetId = null
                     }
                 )
             }
@@ -300,6 +224,67 @@ fun TileWallScreen(
                                     } else Modifier
                                 )
                                 .clip(RoundedCornerShape(0.dp))
+                                .clickable {
+                                    currentOnTrackClick(track)
+                                }
+                                .pointerInput(track.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggedId = track.id
+                                            dragOffsetX = 0f
+                                            dragOffsetY = 0f
+                                            dragTargetId = null
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragOffsetX += dragAmount.x
+                                            dragOffsetY += dragAmount.y
+                                            val dId = draggedId ?: return@detectDragGesturesAfterLongPress
+                                            val pos = tilePositions[dId] ?: return@detectDragGesturesAfterLongPress
+                                            val span = currentTileSpans[dId] ?: return@detectDragGesturesAfterLongPress
+                                            val cx = pos.first * cellPx + span.first * cellPx / 2 + dragOffsetX
+                                            val cy = pos.second * cellPx + span.second * cellPx / 2 + dragOffsetY
+                                            var hit: Long? = null
+                                            for (t in currentTracks) {
+                                                if (t.id == dId) continue
+                                                val p = tilePositions[t.id] ?: continue
+                                                val s = currentTileSpans[t.id] ?: continue
+                                                if (cx >= p.first * cellPx && cx < (p.first + s.first) * cellPx &&
+                                                    cy >= p.second * cellPx && cy < (p.second + s.second) * cellPx
+                                                ) {
+                                                    hit = t.id
+                                                    break
+                                                }
+                                            }
+                                            dragTargetId = hit
+                                        },
+                                        onDragEnd = {
+                                            val from = draggedId
+                                            val to = dragTargetId
+                                            if (from != null && to != null && from != to) {
+                                                val pa = tilePositions[from]
+                                                val pb = tilePositions[to]
+                                                if (pa != null && pb != null) {
+                                                    tilePositions[from] = pb
+                                                    tilePositions[to] = pa
+                                                }
+                                                val fromIdx = currentTracks.indexOfFirst { it.id == from }
+                                                val toIdx = currentTracks.indexOfFirst { it.id == to }
+                                                if (fromIdx >= 0 && toIdx >= 0) currentOnReorder(fromIdx, toIdx)
+                                            }
+                                            draggedId = null
+                                            dragOffsetX = 0f
+                                            dragOffsetY = 0f
+                                            dragTargetId = null
+                                        },
+                                        onDragCancel = {
+                                            draggedId = null
+                                            dragOffsetX = 0f
+                                            dragOffsetY = 0f
+                                            dragTargetId = null
+                                        }
+                                    )
+                                }
                         ) {
                             TileContent(
                                 track = track,
@@ -455,7 +440,11 @@ fun TileWallScreen(
             currentPosition = currentPosition,
             duration = duration,
             onSeek = onSeek,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .onGloballyPositioned { coords ->
+                    bottomInsetPx = coords.size.height.toFloat()
+                }
         )
     }
 }
@@ -503,34 +492,7 @@ private fun packTiles(
     }
 }
 
-/**
- * 在磁贴墙坐标系中查找包含指定屏幕坐标的磁贴 track.id。
- * 屏幕坐标 → 内容坐标：减去 offset；再与各磁贴 (pos*cellPx, span*cellPx) 矩形比对。
- */
-private fun findTrackIdAt(
-    screenPosition: Offset,
-    offsetX: Float,
-    offsetY: Float,
-    tracks: List<MusicTrack>,
-    tilePositions: Map<Long, Pair<Int, Int>>,
-    tileSpans: Map<Long, Pair<Int, Int>>,
-    cellPx: Float
-): Long? {
-    val xInContent = screenPosition.x - offsetX
-    val yInContent = screenPosition.y - offsetY
-    for (track in tracks) {
-        val pos = tilePositions[track.id] ?: continue
-        val span = tileSpans[track.id] ?: continue
-        val px = pos.first * cellPx
-        val py = pos.second * cellPx
-        if (xInContent >= px && xInContent < px + span.first * cellPx &&
-            yInContent >= py && yInContent < py + span.second * cellPx
-        ) {
-            return track.id
-        }
-    }
-    return null
-}
+
 
 private fun canPlace(occupied: Array<BooleanArray>, col: Int, row: Int, w: Int, h: Int, columns: Int, maxRows: Int): Boolean {
     if (col + w > columns) return false
