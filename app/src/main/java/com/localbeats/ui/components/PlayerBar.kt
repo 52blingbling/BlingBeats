@@ -12,6 +12,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -74,6 +77,7 @@ fun PlayerBar(
     artist: String? = null,
     lyrics: String? = null,
     compact: Boolean = false,
+    onOrientationToggleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 胶囊形状：圆角设为很大的值，配合高度形成 pill
@@ -112,40 +116,36 @@ fun PlayerBar(
                 .height(64.dp)
                 .clip(pillShape)
                 .shadow(
-                    elevation = 16.dp,
+                    elevation = 20.dp,
                     shape = pillShape,
-                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    ambientColor = Color.Black.copy(alpha = 0.5f),
                     spotColor = Color.Black.copy(alpha = 0.5f)
                 )
                 .background(
-                    // 液态玻璃：从上半部更亮（高光感）到下半部更暗的渐变
+                    // 模拟 iOS 深色毛玻璃底色：深灰微透，带有极弱的上下渐变
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.18f),
-                            Color.White.copy(alpha = 0.08f),
-                            Color.Black.copy(alpha = 0.25f),
-                            Color.Black.copy(alpha = 0.35f)
+                            Color(0xFF2C2C2E).copy(alpha = 0.85f),
+                            Color(0xFF1C1C1E).copy(alpha = 0.85f)
                         )
                     )
                 )
+                // 模拟 iOS 玻璃高光描边：左上角偏白，右下角偏暗/透明
+                .border(
+                    width = 0.5.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.35f),
+                            Color.White.copy(alpha = 0.05f),
+                            Color.White.copy(alpha = 0.01f),
+                            Color.White.copy(alpha = 0.1f) // 右下角轻微反光
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                    ),
+                    shape = pillShape
+                )
         ) {
-            // 顶部高光线（模拟玻璃边缘反光）
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.White.copy(alpha = 0.5f),
-                                Color.White.copy(alpha = 0.7f),
-                                Color.White.copy(alpha = 0.5f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
 
             Row(
                 modifier = Modifier
@@ -215,40 +215,61 @@ fun PlayerBar(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // 右侧：仅播放/暂停按钮
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.95f),
-                                    Color.White.copy(alpha = 0.85f)
+                // 右侧：播放/暂停按钮 及 旋转按钮
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onOrientationToggleClick != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.15f))
+                                .clickable(onClick = onOrientationToggleClick),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ScreenRotation,
+                                contentDescription = "Toggle Orientation",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.95f),
+                                        Color.White.copy(alpha = 0.85f)
+                                    )
                                 )
                             )
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onPlayPauseClick
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AnimatedContent(
-                        targetState = isPlaying,
-                        transitionSpec = {
-                            (scaleIn(tween(120)) + fadeIn(tween(120)))
-                                .togetherWith(scaleOut(tween(120)) + fadeOut(tween(120)))
-                        },
-                        label = "play_pause"
-                    ) { playing ->
-                        Icon(
-                            imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (playing) "Pause" else "Play",
-                            tint = Color.Black,
-                            modifier = Modifier.size(26.dp)
-                        )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onPlayPauseClick
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedContent(
+                            targetState = isPlaying,
+                            transitionSpec = {
+                                (scaleIn(tween(120)) + fadeIn(tween(120)))
+                                    .togetherWith(scaleOut(tween(120)) + fadeOut(tween(120)))
+                            },
+                            label = "play_pause"
+                        ) { playing ->
+                            Icon(
+                                imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (playing) "Pause" else "Play",
+                                tint = Color.Black,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
                     }
                 }
             }

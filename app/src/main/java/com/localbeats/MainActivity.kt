@@ -196,6 +196,15 @@ fun MusicApp(
     val duration by viewModel.duration.collectAsState()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? android.app.Activity
+    val toggleOrientation = {
+        if (isLandscape) {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
 
     LaunchedEffect(selectedFolderUri) {
         if (selectedFolderUri != null) {
@@ -240,7 +249,8 @@ fun MusicApp(
                 onNextClick = { viewModel.playNext() },
                 currentPosition = currentPosition,
                 duration = duration,
-                onSeek = { viewModel.seekTo(it) }
+                onSeek = { viewModel.seekTo(it) },
+                onOrientationToggleClick = toggleOrientation
             )
         } else {
             TileWallScreen(
@@ -255,7 +265,8 @@ fun MusicApp(
                 duration = duration,
                 onSeek = { viewModel.seekTo(it) },
                 onImportClick = onImportFolderClick,
-                onRescan = { viewModel.rescanCurrentFolder() }
+                onRescan = { viewModel.rescanCurrentFolder() },
+                onOrientationToggleClick = toggleOrientation
             )
         }
     }

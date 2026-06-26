@@ -28,8 +28,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
+import java.util.Random
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -96,6 +102,7 @@ fun TileWallScreen(
     onImportClick: () -> Unit = {},
     onReorder: (Int, Int) -> Unit = { _, _ -> },
     onRescan: () -> Unit = {},
+    onOrientationToggleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -110,6 +117,8 @@ fun TileWallScreen(
     }
     var menuExpanded by remember { mutableStateOf(false) }
 
+    var randomSeed by remember { mutableIntStateOf(0) }
+
     // 视口与内容尺寸
     var viewportWidth by remember { mutableFloatStateOf(0f) }
     var viewportHeight by remember { mutableFloatStateOf(0f) }
@@ -122,11 +131,10 @@ fun TileWallScreen(
     val tileSpansMap = remember(idSetKey) { tracks.associate { it.id to computeSpan(it) } }
 
     // 独立的 id→磁贴坐标（单元格 col,row）映射。
-    // 仅在曲目集合或列数变化时重新打包；重排（仅顺序变化）不会触发重新打包，
-    // 因此拖拽交换后位置保持稳定。交换时只交换对应项，避免整体 reflow。
-    val tilePositions = remember(idSetKey, columns) {
+    val tilePositions = remember(idSetKey, columns, randomSeed) {
         mutableStateMapOf<Long, Pair<Int, Int>>().apply {
-            packTiles(tracks, tileSpansMap, columns, this)
+            val shuffledTracks = if (randomSeed == 0) tracks else tracks.shuffled(Random(randomSeed.toLong()))
+            packTiles(shuffledTracks, tileSpansMap, columns, this)
         }
     }
 
@@ -143,19 +151,6 @@ fun TileWallScreen(
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
     var bottomInsetPx by remember { mutableFloatStateOf(0f) }
-    var offsetInitialized by remember { mutableStateOf(false) }
-    LaunchedEffect(topInsetPx) {
-        if (!offsetInitialized && topInsetPx > 0f) {
-            offsetY = topInsetPx
-            offsetInitialized = true
-        }
-    }
-
-    // 长按拖动相关状态（全部以 track.id 为键）
-    var draggedId by remember { mutableStateOf<Long?>(null) }
-    var dragOffsetX by remember { mutableFloatStateOf(0f) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    var dragTargetId by remember { mutableStateOf<Long?>(null) }
 
     // pointerInput(Unit) 的 lambda 只创建一次，用 rememberUpdatedState 始终读取最新值
     val currentTracks by rememberUpdatedState(tracks)
@@ -172,14 +167,12 @@ fun TileWallScreen(
                 viewportWidth = coords.size.width.toFloat()
                 viewportHeight = coords.size.height.toFloat()
             }
-            // 平移磁贴墙（长按拖动接管后会取消平移）
+            // 平移磁贴墙
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
-                        if (draggedId != null) return@detectDragGestures // 拖磁贴中不平移
                         change.consume()
                         val maxX = max(0f, contentWidth - viewportWidth)
-                        val restY = topInsetPx
                         val usableHeight = (viewportHeight - topInsetPx - bottomInsetPx).coerceAtLeast(0f)
                         val maxScrollUp = max(0f, contentHeight - usableHeight)
                         offsetX = (offsetX + dragAmount.x).coerceIn(
@@ -187,105 +180,48 @@ fun TileWallScreen(
                             viewportWidth * 0.25f
                         )
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            restY - maxScrollUp - viewportHeight * 0.25f,
-                            (viewportHeight - bottomInsetPx - viewportHeight * 0.15f).coerceAtLeast(restY)
+                            -maxScrollUp - usableHeight * 0.25f,
+                            (usableHeight - 100f).coerceAtLeast(0f)
                         )
                     }
                 )
             }
     ) {
-        Layout(
-            content = {
-                tracks.forEach { track ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    top = with(LocalDensity.current) { topInsetPx.toDp() },
+                    bottom = with(LocalDensity.current) { bottomInsetPx.toDp() }
+                )
+                .clipToBounds()
+        ) {
+            Layout(
+                content = {
+                    tracks.forEach { track ->
                     key(track.id) {
                         val span = tileSpansMap[track.id] ?: (1 to 1)
-                        val isDragged = draggedId == track.id
-                        val isDropTarget = dragTargetId == track.id
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
+                        val scale by animateFloatAsState(
+                            targetValue = if (isPressed) 0.92f else 1f,
+                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+                            label = "tileScale"
+                        )
                         Box(
                             modifier = Modifier
                                 .layoutId(track.id)
-                                .zIndex(if (isDragged) 100f else 0f)
-                                .pointerInput(track.id) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            draggedId = track.id
-                                            dragOffsetX = 0f
-                                            dragOffsetY = 0f
-                                            dragTargetId = null
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            dragOffsetX += dragAmount.x
-                                            dragOffsetY += dragAmount.y
-                                            val dId = draggedId ?: return@detectDragGesturesAfterLongPress
-                                            val pos = tilePositions[dId] ?: return@detectDragGesturesAfterLongPress
-                                            val span = currentTileSpans[dId] ?: return@detectDragGesturesAfterLongPress
-                                            val cx = pos.first * cellPx + span.first * cellPx / 2 + dragOffsetX
-                                            val cy = pos.second * cellPx + span.second * cellPx / 2 + dragOffsetY
-                                            var hit: Long? = null
-                                            for (t in currentTracks) {
-                                                if (t.id == dId) continue
-                                                val p = tilePositions[t.id] ?: continue
-                                                val s = currentTileSpans[t.id] ?: continue
-                                                if (cx >= p.first * cellPx && cx < (p.first + s.first) * cellPx &&
-                                                    cy >= p.second * cellPx && cy < (p.second + s.second) * cellPx
-                                                ) {
-                                                    hit = t.id
-                                                    break
-                                                }
-                                            }
-                                            dragTargetId = hit
-                                        },
-                                        onDragEnd = {
-                                            val from = draggedId
-                                            val to = dragTargetId
-                                            if (from != null && to != null && from != to) {
-                                                val pa = tilePositions[from]
-                                                val pb = tilePositions[to]
-                                                if (pa != null && pb != null) {
-                                                    tilePositions[from] = pb
-                                                    tilePositions[to] = pa
-                                                }
-                                                val fromIdx = currentTracks.indexOfFirst { it.id == from }
-                                                val toIdx = currentTracks.indexOfFirst { it.id == to }
-                                                if (fromIdx >= 0 && toIdx >= 0) currentOnReorder(fromIdx, toIdx)
-                                            }
-                                            draggedId = null
-                                            dragOffsetX = 0f
-                                            dragOffsetY = 0f
-                                            dragTargetId = null
-                                        },
-                                        onDragCancel = {
-                                            draggedId = null
-                                            dragOffsetX = 0f
-                                            dragOffsetY = 0f
-                                            dragTargetId = null
-                                        }
-                                    )
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
                                 }
-                                .clickable {
+                                .clip(RoundedCornerShape(0.dp))
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = androidx.compose.foundation.LocalIndication.current
+                                ) {
                                     currentOnTrackClick(track)
                                 }
-                                .graphicsLayer {
-                                    if (isDragged) {
-                                        translationX = dragOffsetX
-                                        translationY = dragOffsetY
-                                        scaleX = 1.15f
-                                        scaleY = 1.15f
-                                        shadowElevation = 24f
-                                        alpha = 0.95f
-                                    }
-                                }
-                                .then(
-                                    if (isDropTarget) {
-                                        Modifier.border(
-                                            width = 3.dp,
-                                            color = Color(0xFFBB86FC),
-                                            shape = RoundedCornerShape(4.dp)
-                                        )
-                                    } else Modifier
-                                )
-                                .clip(RoundedCornerShape(0.dp))
                         ) {
                             TileContent(
                                 track = track,
@@ -329,6 +265,7 @@ fun TileWallScreen(
             modifier = Modifier
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
         )
+        }
 
         // 顶部浮层标题栏
         Box(
@@ -408,6 +345,20 @@ fun TileWallScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("随机排列") },
+                                onClick = {
+                                    menuExpanded = false
+                                    randomSeed++
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("显示歌曲标题") },
                                 onClick = {
                                     showTitle = !showTitle
@@ -441,6 +392,7 @@ fun TileWallScreen(
             currentPosition = currentPosition,
             duration = duration,
             onSeek = onSeek,
+            onOrientationToggleClick = onOrientationToggleClick,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onGloballyPositioned { coords ->
@@ -454,10 +406,8 @@ fun TileWallScreen(
 private fun computeSpan(track: MusicTrack): Pair<Int, Int> {
     val k = ((track.id % 7) + 7) % 7
     return when (k.toInt()) {
-        0 -> 2 to 2   // 大磁贴
-        3 -> 2 to 1   // 宽磁贴
-        5 -> 1 to 2   // 高磁贴
-        else -> 1 to 1
+        0, 3 -> 2 to 2   // 大正方形磁贴
+        else -> 1 to 1   // 小正方形磁贴
     }
 }
 

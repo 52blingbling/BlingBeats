@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +57,7 @@ fun CarouselScreen(
     currentPosition: Long = 0L,
     duration: Long = 0L,
     onSeek: (Long) -> Unit = {},
+    onOrientationToggleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 循环切换：用较大的虚拟页数实现近似无限循环，page 取模映射到真实曲目。
@@ -87,6 +93,7 @@ fun CarouselScreen(
 
     // 外部切歌（如播放下一首、点磁贴）时，把轮播平滑滚到对应曲目
     // 选择离当前页最近的虚拟页，保证最短路径滚动
+    var isFirstLoad by remember { mutableStateOf(true) }
     LaunchedEffect(currentTrack?.id, tracks) {
         val targetTrack = currentTrack ?: return@LaunchedEffect
         if (tracks.isEmpty()) return@LaunchedEffect
@@ -96,15 +103,20 @@ fun CarouselScreen(
         val currentReal = ((currentVirtual % tracks.size) + tracks.size) % tracks.size
         // 取离 currentReal 最近的等价虚拟页
         val targetVirtual = currentVirtual + (targetReal - currentReal)
-        if (!pagerState.isScrollInProgress && pagerState.settledPage != targetVirtual) {
+
+        if (isFirstLoad) {
+            pagerState.scrollToPage(targetVirtual)
+            isFirstLoad = false
+        } else if (!pagerState.isScrollInProgress && pagerState.settledPage != targetVirtual) {
             pagerState.animateScrollToPage(targetVirtual)
         }
     }
 
-    // 自定义 fling：基于速度的快→慢减速动画，最终自然吸附到中间曲目
+    // 自定义 fling：基于速度的快→慢减速动画，支持跨多页甩动，最终自然吸附
     val flingBehavior = PagerDefaults.flingBehavior(
         state = pagerState,
-        snapAnimationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
+        pagerSnapDistance = PagerSnapDistance.atMost(20),
+        snapPositionalThreshold = 0.5f
     )
 
     Box(
@@ -196,6 +208,7 @@ fun CarouselScreen(
             duration = duration,
             onSeek = onSeek,
             compact = true,
+            onOrientationToggleClick = onOrientationToggleClick,
             modifier = Modifier.align(Alignment.BottomStart)
         )
     }

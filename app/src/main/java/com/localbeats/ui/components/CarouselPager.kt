@@ -43,7 +43,7 @@ fun CarouselItem(
 
     Box(
         modifier = modifier
-            .size(width = 280.dp, height = 360.dp)
+            .size(300.dp)
             .then(
                 if (isPlaying) {
                     Modifier.border(
