@@ -125,11 +125,11 @@ fun PlayerBar(
                     spotColor = Color.Black.copy(alpha = 0.5f)
                 )
                 .background(
-                    // 模拟 iOS 深色毛玻璃底色：深灰微透，带有极弱的上下渐变
+                    // 真实的 iOS 动态液态玻璃：亮色模式为半透明白，暗色模式为半透明深色
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF2C2C2E).copy(alpha = 0.85f),
-                            Color(0xFF1C1C1E).copy(alpha = 0.85f)
+                            androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                            androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
                         )
                     )
                 )
@@ -169,7 +169,7 @@ fun PlayerBar(
                     ) {
                         Text(
                             text = title,
-                            color = Color.White,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -193,7 +193,7 @@ fun PlayerBar(
                             ) { line ->
                                 Text(
                                     text = line,
-                                    color = Color.White.copy(alpha = 0.85f),
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Normal,
                                     maxLines = 1,
@@ -208,7 +208,7 @@ fun PlayerBar(
                         } else if (!artist.isNullOrBlank()) {
                             Text(
                                 text = artist,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Normal,
                                 maxLines = 1,
@@ -230,14 +230,14 @@ fun PlayerBar(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                                 .clickable(onClick = onOrientationToggleClick),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.ScreenRotation,
                                 contentDescription = "Toggle Orientation",
-                                tint = Color.White,
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -248,14 +248,7 @@ fun PlayerBar(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.95f),
-                                        Color.White.copy(alpha = 0.85f)
-                                    )
-                                )
-                            )
+                            .background(androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -274,7 +267,7 @@ fun PlayerBar(
                             Icon(
                                 imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                 contentDescription = if (playing) "Pause" else "Play",
-                                tint = Color.Black,
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.surface,
                                 modifier = Modifier.size(26.dp)
                             )
                         }

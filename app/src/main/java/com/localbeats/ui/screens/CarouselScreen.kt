@@ -146,6 +146,11 @@ fun CarouselScreen(
         else -> null
     }
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenHeightDp = configuration.screenHeightDp.dp
+    // 动态计算封面大小，为顶部标题和底部歌词留出充足空间
+    val coverSize = (screenHeightDp - 150.dp).coerceAtMost(320.dp).coerceAtLeast(160.dp)
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -200,6 +205,7 @@ fun CarouselScreen(
                         track = track,
                         isPlaying = isPlaying && track.id == currentTrack?.id,
                         onClick = { onTrackClick(track) },
+                        size = coverSize,
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
@@ -239,7 +245,7 @@ fun CarouselScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp) // 悬浮在 PlayerBar 上方
+                        .padding(bottom = 72.dp) // 悬浮在 PlayerBar 上方
                         .padding(horizontal = 24.dp)
                 ) {
                     AnimatedContent(
@@ -280,7 +286,7 @@ fun CarouselScreen(
             onSeek = onSeek,
             compact = true,
             onOrientationToggleClick = onOrientationToggleClick,
-            modifier = Modifier.align(Alignment.BottomStart)
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 4.dp)
         )
     }
 }

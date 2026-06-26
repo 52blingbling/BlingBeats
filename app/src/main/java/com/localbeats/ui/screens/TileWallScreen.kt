@@ -167,20 +167,17 @@ fun TileWallScreen(
     val currentOnReorder by rememberUpdatedState(onReorder)
 
     // 性能优化核心：只渲染视野内（加两倍格子缓冲）的磁贴，避免 Coil 一次性加载几千张封面导致卡顿
-    val visibleTracks by remember(tracks, tilePositions, columns) {
-        androidx.compose.runtime.derivedStateOf {
-            tracks.filter { track ->
-                val pos = tilePositions[track.id] ?: (0 to 0)
-                val span = tileSpansMap[track.id] ?: (1 to 1)
-                val x = pos.first * cellPx + offsetX
-                val y = pos.second * cellPx + offsetY
-                val w = span.first * cellPx
-                val h = span.second * cellPx
-                val buffer = cellPx * 2f
-                x + w > -buffer && x < screenWidthPx + buffer &&
-                y + h > -buffer && y < screenHeightPx + buffer
-            }
-        }
+    // 直接在组合阶段计算，依赖 Compose 本身的极速重组和 key() 节点复用，避免 derivedStateOf 潜藏的缓存未刷新问题
+    val visibleTracks = tracks.filter { track ->
+        val pos = tilePositions[track.id] ?: (0 to 0)
+        val span = tileSpansMap[track.id] ?: (1 to 1)
+        val x = pos.first * cellPx + offsetX
+        val y = pos.second * cellPx + offsetY
+        val w = span.first * cellPx
+        val h = span.second * cellPx
+        val buffer = cellPx * 2f
+        x + w > -buffer && x < screenWidthPx + buffer &&
+        y + h > -buffer && y < screenHeightPx + buffer
     }
 
     Box(

@@ -36,14 +36,15 @@ fun CarouselItem(
     track: MusicTrack,
     isPlaying: Boolean = false,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 300.dp
 ) {
     val shape = RoundedCornerShape(24.dp)
     val palette = placeholderPalettes[(track.id % placeholderPalettes.size).toInt().coerceAtLeast(0)]
 
     Box(
         modifier = modifier
-            .size(300.dp)
+            .size(size)
             .then(
                 if (isPlaying) {
                     Modifier.border(
