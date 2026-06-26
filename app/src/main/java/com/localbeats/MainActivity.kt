@@ -630,7 +630,7 @@ fun FolderSelectionScreen(
 fun ThemeOption(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onClick)) {
         RadioButton(
-            checked = selected,
+            selected = selected,
             onClick = null,
             colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFBB86FC))
         )
