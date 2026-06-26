@@ -262,7 +262,10 @@ fun TileWallScreen(
                 }
             },
             modifier = Modifier
-                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .graphicsLayer {
+                    translationX = offsetX
+                    translationY = offsetY
+                }
         )
 
         // 顶部浮层标题栏
