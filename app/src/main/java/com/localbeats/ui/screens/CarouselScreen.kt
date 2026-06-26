@@ -204,63 +204,62 @@ fun CarouselScreen(
             }
         }
 
-            // 顶部渐变遮罩与标题
+        // 顶部渐变遮罩与标题
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
+                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.4f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .statusBarsPadding()
+                .padding(top = 8.dp, bottom = 8.dp)
+        ) {
+            Text(
+                text = currentTrack?.title ?: "未选择歌曲",
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 32.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // 底部歌词
+        if (currentLyricText != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                                androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.4f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .statusBarsPadding()
-                    .padding(top = 8.dp, bottom = 8.dp)
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp) // 极致贴合底部边缘，留出完整空间给封面
+                    .padding(horizontal = 24.dp)
             ) {
-                Text(
-                    text = currentTrack?.title ?: "未选择歌曲",
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 32.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // 底部歌词
-            if (currentLyricText != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp) // 极致贴合底部边缘，留出完整空间给封面
-                        .padding(horizontal = 24.dp)
-                ) {
-                    AnimatedContent(
-                        targetState = currentLyricText,
-                        transitionSpec = {
-                            (slideInVertically { it / 2 } + fadeIn(tween(200)))
-                                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
-                        },
-                        label = "lyric_line",
-                        modifier = Modifier.align(Alignment.Center)
-                    ) { line ->
-                        Text(
-                            text = line,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
-                        )
-                    }
+                AnimatedContent(
+                    targetState = currentLyricText,
+                    transitionSpec = {
+                        (slideInVertically { it / 2 } + fadeIn(tween(200)))
+                            .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
+                    },
+                    label = "lyric_line",
+                    modifier = Modifier.align(Alignment.Center)
+                ) { line ->
+                    Text(
+                        text = line,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
+                    )
                 }
             }
         }
