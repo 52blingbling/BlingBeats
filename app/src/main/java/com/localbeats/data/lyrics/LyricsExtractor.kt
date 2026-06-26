@@ -31,7 +31,10 @@ object LyricsExtractor {
      * @param cacheKey 缓存临时文件命名用 key（避免冲突）
      */
     fun extract(context: Context, uri: Uri, cacheKey: String): String? {
-        val tempFile = File(context.cacheDir, "lyrics_tmp_$cacheKey")
+        // jaudiotagger 依赖文件扩展名判断音频格式，必须给临时文件加上正确扩展名，
+        // 否则 AudioFileIO.read() 抛 CannotReadException 导致读取失败。
+        val ext = guessExtension(context, uri)
+        val tempFile = File(context.cacheDir, "lyrics_tmp_$cacheKey$ext")
         return try {
             // 复制 SAF Uri 到临时文件（jaudiotagger 需要 File）
             val copied = context.contentResolver.openInputStream(uri)?.use { input ->
@@ -44,7 +47,7 @@ object LyricsExtractor {
                 Log.w(TAG, "复制文件失败: $uri")
                 return null
             }
-            Log.d(TAG, "临时文件大小=${tempFile.length()} bytes, uri=$uri")
+            Log.d(TAG, "临时文件=${tempFile.name}, 大小=${tempFile.length()} bytes, uri=$uri")
 
             val audioFile = try {
                 AudioFileIO.read(tempFile)
@@ -71,8 +74,9 @@ object LyricsExtractor {
                 Log.w(TAG, "getFirst(LYRICS) 异常: ${t.message}")
                 null
             }
+            Log.d(TAG, "getFirst(LYRICS) 结果: isNull=${primary == null}, isBlank=${primary.isNullOrBlank()}, len=${primary?.length ?: -1}")
             if (primary != null && primary.isNotBlank()) {
-                Log.i(TAG, "提取到歌词（LYRICS字段），长度=${primary.length}")
+                Log.i(TAG, "提取到歌词（LYRICS字段），长度=${primary.length}, 预览=${primary.take(40)}")
                 return cleanLyrics(primary)
             }
 
@@ -126,15 +130,34 @@ object LyricsExtractor {
     }
 
     /**
+     * 推断音频文件扩展名，供 jaudiotagger 识别格式。
+     * 优先用 SAF DISPLAY_NAME；失败则从 uri 路径解析；都失败则按常见情况返回空。
+     */
+    private fun guessExtension(context: Context, uri: Uri): String {
+        // 1. 查询 DISPLAY_NAME
+        val displayName = try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (_: Throwable) { null }
+        val name = displayName ?: uri.lastPathSegment.orEmpty()
+        val dot = name.lastIndexOf('.')
+        if (dot >= 0 && dot < name.length - 1) {
+            return name.substring(dot).lowercase() // 含 "."
+        }
+        // 2. 兜底：无法识别扩展名时，mp3 是最常见的本地音乐格式
+        return ".mp3"
+    }
+
+    /**
      * 启发式判断文本是否像歌词（避免把短评论误判为歌词）。
      * 满足以下任一条件视为歌词：
      * - 含 LRC 时间戳（[mm:ss.xx]）
-     * - 多行文本（≥3 行）且总长度 ≥30
+     * - 多行文本（≥2 行）且总长度 ≥10（放宽：UTF-16 中文歌词每行字数少但仍应被识别）
      */
     private fun looksLikeLyrics(text: String): Boolean {
         if (text.contains(Regex("""\[\d+:\d+"""))) return true
         val lineCount = text.lines().count { it.isNotBlank() }
-        return lineCount >= 3 && text.length >= 30
+        return lineCount >= 2 && text.length >= 10
     }
 
     /**
@@ -148,11 +171,13 @@ object LyricsExtractor {
             val fieldsObj = getFieldsMethod.invoke(tag) ?: return null
             // jaudiotagger 的 getFields() 返回 Iterator<TagField>
             if (fieldsObj !is Iterator<*>) return null
+            Log.d(TAG, "反射遍历 tag 字段开始")
             while (fieldsObj.hasNext()) {
                 val field = fieldsObj.next() ?: continue
                 val id = try {
                     field.javaClass.getMethod("getId").invoke(field) as? String
                 } catch (_: Throwable) { null }
+                Log.d(TAG, "  字段 id=$id, type=${field.javaClass.simpleName}")
                 if (id == null || !(id.contains("LYRIC", true) ||
                         id.contains("USLT", true) || id.contains("LYR", true))) {
                     continue
@@ -169,12 +194,14 @@ object LyricsExtractor {
                         } catch (_: Throwable) { null }
                     }
                 }
+                Log.d(TAG, "    content 长度=${content?.length ?: -1}, 预览=${content?.take(40)}")
                 if (!content.isNullOrBlank() && looksLikeLyrics(content)) {
                     return content
                 }
             }
             null
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.w(TAG, "反射遍历失败: ${t.message}")
             null
         }
     }

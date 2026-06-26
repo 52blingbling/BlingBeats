@@ -1,11 +1,14 @@
 package com.localbeats.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,22 +54,54 @@ fun CarouselScreen(
     onSeek: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // 循环切换：用足够大的虚拟页数实现无限循环，page 取模映射到真实曲目
+    val basePage = 1_000_000
     val startIndex = tracks.indexOfFirst { it.id == currentTrack?.id }.coerceAtLeast(0)
     val pagerState = rememberPagerState(
-        initialPage = startIndex,
-        pageCount = { tracks.size }
+        initialPage = basePage + startIndex,
+        pageCount = { if (tracks.isEmpty()) 0 else Int.MAX_VALUE }
     )
 
-    // 仅在 settledPage 改变（用户停止滑动后）且目标与当前播放曲目不同时切换。
-    // 旋转重建时 settledPage = initialPage = 当前曲目，跳过调用避免重播。
-    LaunchedEffect(pagerState) {
+    // 虚拟页 → 真实曲目（取模，兼容负数）
+    fun trackAt(virtualPage: Int): MusicTrack? {
+        if (tracks.isEmpty()) return null
+        val realIndex = ((virtualPage % tracks.size) + tracks.size) % tracks.size
+        return tracks.getOrNull(realIndex)
+    }
+
+    // 用户滑动停止后（settledPage）切换到对应曲目
+    // 用 tracks 作为 key 之一，避免 tracks 变化后 trackAt 闭包捕获旧值
+    LaunchedEffect(pagerState, tracks) {
         snapshotFlow { pagerState.settledPage }
             .collectLatest { page ->
-                if (page in tracks.indices && tracks[page].id != currentTrack?.id) {
-                    onTrackClick(tracks[page])
+                val track = trackAt(page) ?: return@collectLatest
+                if (track.id != currentTrack?.id) {
+                    onTrackClick(track)
                 }
             }
     }
+
+    // 外部切歌（如播放下一首、点磁贴）时，把轮播平滑滚到对应曲目
+    // 选择离当前页最近的虚拟页，保证最短路径滚动
+    LaunchedEffect(currentTrack?.id, tracks) {
+        val targetTrack = currentTrack ?: return@LaunchedEffect
+        if (tracks.isEmpty()) return@LaunchedEffect
+        val targetReal = tracks.indexOfFirst { it.id == targetTrack.id }
+        if (targetReal < 0) return@LaunchedEffect
+        val currentVirtual = pagerState.currentPage
+        val currentReal = ((currentVirtual % tracks.size) + tracks.size) % tracks.size
+        // 取离 currentReal 最近的等价虚拟页
+        val targetVirtual = currentVirtual + (targetReal - currentReal)
+        if (!pagerState.isScrollInProgress && pagerState.settledPage != targetVirtual) {
+            pagerState.animateScrollToPage(targetVirtual)
+        }
+    }
+
+    // 自定义 fling：基于速度的快→慢减速动画，最终自然吸附到中间曲目
+    val flingBehavior = PagerDefaults.flingBehavior(
+        state = pagerState,
+        snapAnimationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
+    )
 
     Box(
         modifier = modifier
@@ -86,10 +121,12 @@ fun CarouselScreen(
                 modifier = Modifier.fillMaxSize(),
                 // 不使用 contentPadding peek，改用 translationX 实现真正的堆叠
                 contentPadding = PaddingValues(horizontal = 0.dp),
+                // 自定义 fling：基于速度的快→慢减速吸附
+                flingBehavior = flingBehavior,
                 // 预渲染左右各 2 页，保证堆叠邻居可见
                 beyondBoundsPageCount = 2
             ) { page ->
-                val track = tracks[page]
+                val track = trackAt(page) ?: return@HorizontalPager
                 // pageOffset：当前页相对此页的偏移。左侧页 pageOffset > 0，右侧页 < 0
                 val pageOffset =
                     (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction

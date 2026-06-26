@@ -1,13 +1,7 @@
 package com.localbeats.ui.screens
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -153,8 +147,11 @@ fun TileWallScreen(
                 viewportWidth = coords.size.width.toFloat()
                 viewportHeight = coords.size.height.toFloat()
             }
-            // 统一手势识别：短按拖动 → 平移磁贴墙；长按后拖动 → 拖动磁贴交换位置；轻点 → 播放（交由 clickable 处理）
-            // 用 withTimeoutOrNull 在手指静止时也能可靠触发长按（awaitPointerEvent 在静止时不返回）
+            // 统一手势识别（单 pointerInput，避免与 clickable 冲突）：
+            //   轻点（按下后短时间抬起、未移动）→ 播放对应磁贴
+            //   移动超过 touchSlop → 平移磁贴墙
+            //   静止超过 longPressMs → 进入磁贴拖动模式，跟随手指交换位置
+            // 用 withTimeoutOrNull 让手指静止时也能可靠触发长按（awaitPointerEvent 静止时不返回）
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -169,8 +166,9 @@ fun TileWallScreen(
                         val downTime = System.currentTimeMillis()
                         // 模式：0=未决, 1=平移, 2=磁贴拖动
                         var mode = 0
+                        var moved = 0f
 
-                        // 第一阶段：判定长按 / 平移 / 抬起（轻点）
+                        // 第一阶段：判定长按 / 平移 / 轻点抬起
                         while (mode == 0) {
                             val elapsed = System.currentTimeMillis() - downTime
                             val remaining = longPressMs - elapsed
@@ -218,10 +216,27 @@ fun TileWallScreen(
                                 break
                             }
                             val change = event.changes.firstOrNull { it.id == downChange.id } ?: break
-                            if (!change.pressed) break // 抬起：轻点，交由 clickable 处理
+                            if (!change.pressed) {
+                                // 抬起：若几乎未移动则视为轻点 → 播放
+                                if (moved < touchSlop) {
+                                    val xInContent = downPosition.x - offsetX
+                                    val yInContent = downPosition.y - offsetY
+                                    for (i in placements.indices) {
+                                        val (px, py) = placements[i]
+                                        val (sw, sh) = tileSpans.getOrNull(i) ?: continue
+                                        if (xInContent >= px && xInContent < px + sw * cellPx &&
+                                            yInContent >= py && yInContent < py + sh * cellPx
+                                        ) {
+                                            tracks.getOrNull(i)?.let { onTrackClick(it) }
+                                            break
+                                        }
+                                    }
+                                }
+                                break
+                            }
                             val dx = change.position.x - downPosition.x
                             val dy = change.position.y - downPosition.y
-                            val moved = sqrt(dx * dx + dy * dy)
+                            moved = sqrt(dx * dx + dy * dy)
                             if (moved >= touchSlop) {
                                 mode = 1 // 超过位移阈值：进入平移模式
                             }
@@ -240,16 +255,19 @@ fun TileWallScreen(
                                     // 平移磁贴墙
                                     change.consume()
                                     val maxX = max(0f, contentWidth - viewportWidth)
-                                    val usableHeight = (viewportHeight - topInsetPx).coerceAtLeast(0f)
-                                    val maxScrollUp = max(0f, contentHeight - usableHeight)
+                                    // 内容基线：顶部磁贴完整显示在标题栏下方
                                     val restY = topInsetPx
+                                    val usableHeight = (viewportHeight - topInsetPx).coerceAtLeast(0f)
+                                    // 限制最大向上拖动距离：内容总高减去可用高度，避免过度滚动
+                                    val maxScrollUp = max(0f, contentHeight - usableHeight)
                                     val newX = (offsetX + dragX).coerceIn(
-                                        -maxX - viewportWidth * 0.3f,
-                                        viewportWidth * 0.3f
+                                        -maxX - viewportWidth * 0.25f,
+                                        viewportWidth * 0.25f
                                     )
+                                    // 向下拖不超过基线（顶部封面始终完整可见），向上拖限制在 maxScrollUp
                                     val newY = (offsetY + dragY).coerceIn(
-                                        restY - maxScrollUp - viewportHeight * 0.3f,
-                                        restY + viewportHeight * 0.3f
+                                        restY - maxScrollUp - viewportHeight * 0.15f,
+                                        restY + viewportHeight * 0.15f
                                     )
                                     offsetX = newX
                                     offsetY = newY
@@ -322,7 +340,6 @@ fun TileWallScreen(
                             spanHeight = span.second,
                             isPlaying = isPlaying && track.id == currentTrack?.id,
                             showTitle = showTitle,
-                            onClick = { onTrackClick(track) },
                             cellPx = cellPx
                         )
                     }
@@ -544,30 +561,13 @@ private fun TileContent(
     spanHeight: Int,
     isPlaying: Boolean,
     showTitle: Boolean,
-    onClick: () -> Unit,
     cellPx: Float
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    // 按压缩放动画：按下时缩小至 0.92，松开回弹
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.92f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "tile_press"
-    )
-
     val palette = placeholderPalettes[(track.id % placeholderPalettes.size).toInt().coerceAtLeast(0)]
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
             .then(
                 if (track.coverUri != null) {
                     Modifier.background(Color.Black)
@@ -586,11 +586,6 @@ private fun TileContent(
                         )
                     )
                 } else Modifier
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
             )
     ) {
         // 封面图或占位符
