@@ -116,7 +116,20 @@ fun CarouselScreen(
         if (tracks.isEmpty()) return@LaunchedEffect
         val targetIdx = tracks.indexOfFirst { it.id == currentTrack?.id }
         if (targetIdx < 0) return@LaunchedEffect
-        val targetOffset = -targetIdx * stridePx
+        val n = tracks.size
+        if (n <= 1) return@LaunchedEffect
+
+        val currentV = ((-scrollOffset.value) / stridePx).roundToInt()
+        val currentRealIdx = ((currentV % n) + n) % n
+        val diff = targetIdx - currentRealIdx
+        var shortestDiff = diff
+        if (shortestDiff > n / 2) {
+            shortestDiff -= n
+        } else if (shortestDiff < -n / 2) {
+            shortestDiff += n
+        }
+        val targetV = currentV + shortestDiff
+        val targetOffset = -targetV * stridePx
         if (abs(scrollOffset.value - targetOffset) > 2f) {
             scrollOffset.animateTo(targetOffset, spring(dampingRatio = 0.8f, stiffness = 300f))
         }
@@ -176,13 +189,14 @@ fun CarouselScreen(
             if (tracks.isEmpty()) return@launch
             // Estimate how many frames the fling momentum should carry
             val flingFrames = (velocityX / stridePx * 0.28f).toInt().coerceIn(-8, 8)
-            val rawIdx = ((-scrollOffset.value) / stridePx).roundToInt() - flingFrames
-            val idx = rawIdx.coerceIn(0, tracks.lastIndex)
+            val idx = ((-scrollOffset.value) / stridePx).roundToInt() - flingFrames
             scrollOffset.animateTo(
                 targetValue = -idx * stridePx,
                 animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f)
             )
-            tracks.getOrNull(idx)?.let { track ->
+            val n = tracks.size
+            val realIdx = ((idx % n) + n) % n
+            tracks.getOrNull(realIdx)?.let { track ->
                 if (track.id != currentTrack?.id) onTrackClick(track)
             }
         }
@@ -210,16 +224,13 @@ fun CarouselScreen(
                         change.consume()
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         if (tracks.isEmpty()) return@detectHorizontalDragGestures
-                        val minScroll = -(tracks.lastIndex * stridePx) - stridePx * 0.4f
-                        val maxScroll = stridePx * 0.4f
                         coroutineScope.launch {
                             scrollOffset.snapTo(
-                                (scrollOffset.value + dragAmount).coerceIn(minScroll, maxScroll)
+                                scrollOffset.value + dragAmount
                             )
                         }
                         // Haptic: fire every time we cross into a new frame
-                        val nowIdx = ((-scrollOffset.value) / stridePx)
-                            .roundToInt().coerceIn(0, tracks.lastIndex)
+                        val nowIdx = ((-scrollOffset.value) / stridePx).roundToInt()
                         if (nowIdx != lastHapticIdx) {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             lastHapticIdx = nowIdx
@@ -273,17 +284,19 @@ fun CarouselScreen(
                 // Sprocket holes only — center spotlight border removed
             }
 
-            // ── Album cover frames ─────────────────────────────────────────────
-            tracks.forEachIndexed { index, track ->
-                val itemCenterOffset = scrollOffset.value + index * stridePx
+            // ── Album cover frames (Infinite loop) ────────────────────────────
+            val centerV = ((-scrollOffset.value) / stridePx).roundToInt()
+            for (v in (centerV - 3)..(centerV + 3)) {
+                val realIdx = ((v % tracks.size) + tracks.size) % tracks.size
+                val track = tracks[realIdx]
+                val itemCenterOffset = scrollOffset.value + v * stridePx
                 val distFromCenter = abs(itemCenterOffset)
                 val normalizedDist = (distFromCenter / stridePx).coerceIn(0f, 1f)
 
-                // Only render covers within ±3 strides of center
-                if (distFromCenter <= stridePx * 3.2f) {
-                    val scale = lerp(1f, 0.62f, normalizedDist)
-                    val itemAlpha = lerp(1f, 0.35f, normalizedDist)
+                val scale = lerp(1f, 0.62f, normalizedDist)
+                val itemAlpha = lerp(1f, 0.35f, normalizedDist)
 
+                androidx.compose.runtime.key(v) {
                     Box(
                         modifier = Modifier
                             .size(frameSize)
@@ -301,7 +314,7 @@ fun CarouselScreen(
                             onClick = {
                                 coroutineScope.launch {
                                     scrollOffset.animateTo(
-                                        -index * stridePx,
+                                        -v * stridePx,
                                         spring(dampingRatio = 0.70f, stiffness = 340f)
                                     )
                                     if (track.id != currentTrack?.id) onTrackClick(track)
