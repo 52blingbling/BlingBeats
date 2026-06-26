@@ -462,7 +462,7 @@ fun WelcomeScreen(onScanMusic: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "一键扫描手机中的所有本地音乐文件",
+                    text = "把耳机里的世界，变成眼前的风景",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,

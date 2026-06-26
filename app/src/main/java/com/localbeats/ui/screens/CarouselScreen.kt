@@ -64,6 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 
 /**
  * 电影胶卷横屏播放器：
@@ -96,7 +97,7 @@ fun CarouselScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val screenHeightDp = configuration.screenHeightDp.dp
-    val frameSize = (screenHeightDp * 0.70f).coerceAtMost(290.dp).coerceAtLeast(160.dp)
+    val frameSize = (screenHeightDp * 0.82f).coerceAtMost(340.dp).coerceAtLeast(180.dp)
     val gapDp = 12.dp
 
     val framePx = with(density) { frameSize.toPx() }
@@ -108,6 +109,7 @@ fun CarouselScreen(
     // scrollOffset = -index * stride means that track[index] is centered
     val scrollOffset = remember { Animatable(-startIndex * stridePx) }
     var lastHapticIdx by remember { mutableIntStateOf(startIndex) }
+    val velocityTracker = remember { VelocityTracker() }
 
     // Sync when external track selection changes
     LaunchedEffect(currentTrack?.id, tracks) {
@@ -168,15 +170,17 @@ fun CarouselScreen(
         else -> null
     }
 
-    // Snap to nearest frame after drag ends
-    fun snapToNearest() {
+    // Snap to nearest frame, with fling: if velocity is large, skip multiple frames
+    fun snapToNearest(velocityX: Float = 0f) {
         coroutineScope.launch {
             if (tracks.isEmpty()) return@launch
-            val idx = ((-scrollOffset.value) / stridePx)
-                .roundToInt().coerceIn(0, tracks.lastIndex)
+            // Estimate how many frames the fling momentum should carry
+            val flingFrames = (velocityX / stridePx * 0.28f).toInt().coerceIn(-8, 8)
+            val rawIdx = ((-scrollOffset.value) / stridePx).roundToInt() - flingFrames
+            val idx = rawIdx.coerceIn(0, tracks.lastIndex)
             scrollOffset.animateTo(
                 targetValue = -idx * stridePx,
-                animationSpec = spring(dampingRatio = 0.70f, stiffness = 340f)
+                animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f)
             )
             tracks.getOrNull(idx)?.let { track ->
                 if (track.id != currentTrack?.id) onTrackClick(track)
@@ -196,10 +200,15 @@ fun CarouselScreen(
             )
             .pointerInput(stridePx, tracks.size) {
                 detectHorizontalDragGestures(
-                    onDragEnd = { snapToNearest() },
-                    onDragCancel = { snapToNearest() },
+                    onDragEnd = {
+                        val velocity = velocityTracker.calculateVelocity().x
+                        velocityTracker.resetTracking()
+                        snapToNearest(velocity)
+                    },
+                    onDragCancel = { velocityTracker.resetTracking(); snapToNearest() },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
                         if (tracks.isEmpty()) return@detectHorizontalDragGestures
                         val minScroll = -(tracks.lastIndex * stridePx) - stridePx * 0.4f
                         val maxScroll = stridePx * 0.4f
@@ -261,16 +270,7 @@ fun CarouselScreen(
                     x += holeSpacing
                 }
 
-                // Center frame spotlight border
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                val halfFrame = framePx / 2f
-                drawRect(
-                    color = Color.White.copy(alpha = 0.18f),
-                    topLeft = Offset(cx - halfFrame, cy - halfFrame),
-                    size = Size(framePx, framePx),
-                    style = Stroke(width = 2.5f)
-                )
+                // Sprocket holes only — center spotlight border removed
             }
 
             // ── Album cover frames ─────────────────────────────────────────────
@@ -324,7 +324,8 @@ fun CarouselScreen(
                         )
                     )
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 6.dp, bottom = 6.dp)
+                    // top padding bumped to 24dp so title clears the sprocket hole strip
+                    .padding(top = 24.dp, bottom = 6.dp)
             ) {
                 Text(
                     text = currentTrack?.title ?: "",
@@ -392,8 +393,9 @@ fun CarouselScreen(
                 compact = true,
                 onOrientationToggleClick = onOrientationToggleClick,
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 12.dp)
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(start = 12.dp, top = 28.dp)
             )
         }
     }
