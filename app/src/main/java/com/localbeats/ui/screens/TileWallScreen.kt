@@ -187,8 +187,8 @@ fun TileWallScreen(
                             viewportWidth * 0.25f
                         )
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            restY - maxScrollUp - viewportHeight * 0.15f,
-                            restY + viewportHeight * 0.15f
+                            restY - maxScrollUp - viewportHeight * 0.25f,
+                            (viewportHeight - bottomInsetPx - viewportHeight * 0.15f).coerceAtLeast(restY)
                         )
                     }
                 )
@@ -205,29 +205,6 @@ fun TileWallScreen(
                             modifier = Modifier
                                 .layoutId(track.id)
                                 .zIndex(if (isDragged) 100f else 0f)
-                                .graphicsLayer {
-                                    if (isDragged) {
-                                        translationX = dragOffsetX
-                                        translationY = dragOffsetY
-                                        scaleX = 1.15f
-                                        scaleY = 1.15f
-                                        shadowElevation = 24f
-                                        alpha = 0.95f
-                                    }
-                                }
-                                .then(
-                                    if (isDropTarget) {
-                                        Modifier.border(
-                                            width = 3.dp,
-                                            color = Color(0xFFBB86FC),
-                                            shape = RoundedCornerShape(4.dp)
-                                        )
-                                    } else Modifier
-                                )
-                                .clip(RoundedCornerShape(0.dp))
-                                .clickable {
-                                    currentOnTrackClick(track)
-                                }
                                 .pointerInput(track.id) {
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
@@ -286,6 +263,29 @@ fun TileWallScreen(
                                         }
                                     )
                                 }
+                                .clickable {
+                                    currentOnTrackClick(track)
+                                }
+                                .graphicsLayer {
+                                    if (isDragged) {
+                                        translationX = dragOffsetX
+                                        translationY = dragOffsetY
+                                        scaleX = 1.15f
+                                        scaleY = 1.15f
+                                        shadowElevation = 24f
+                                        alpha = 0.95f
+                                    }
+                                }
+                                .then(
+                                    if (isDropTarget) {
+                                        Modifier.border(
+                                            width = 3.dp,
+                                            color = Color(0xFFBB86FC),
+                                            shape = RoundedCornerShape(4.dp)
+                                        )
+                                    } else Modifier
+                                )
+                                .clip(RoundedCornerShape(0.dp))
                         ) {
                             TileContent(
                                 track = track,
