@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -23,9 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,8 +48,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -65,7 +69,6 @@ import com.localbeats.ui.components.placeholderPalettes
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /**
  * Windows 8/10 开始菜单风格的方形磁贴墙：
@@ -92,10 +95,17 @@ fun TileWallScreen(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
+    val context = LocalContext.current
     // 基础单元尺寸：每格 110dp
     val cellPx = with(density) { 110.dp.toPx() }
-    val touchSlop = with(density) { 18.dp.toPx() } // 触发拖动的位移阈值
-    val longPressTimeoutMs = 400L // 长按触发延时（短于系统默认 500ms，更跟手）
+
+    // 竖屏封面歌曲标题显示开关（持久化到 SharedPreferences）
+    val prefs = remember { context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE) }
+    var showTitle by remember {
+        mutableStateOf(prefs.getBoolean("show_tile_title", true))
+    }
+    // 设置菜单展开状态
+    var menuExpanded by remember { mutableStateOf(false) }
 
     val tileSpans = remember(tracks) { tracks.mapIndexed(::computeSpan) }
 
@@ -112,6 +122,9 @@ fun TileWallScreen(
     // 每个磁贴在磁贴墙坐标系中的左上角坐标（measure 后填充）
     val placements = remember { mutableStateListOf<Pair<Float, Float>>() }
 
+    // 顶部标题栏高度（动态测量），磁贴墙内容从此高度下方开始，避免被遮挡
+    var topInsetPx by remember { mutableFloatStateOf(0f) }
+
     // 长按拖动相关状态
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
@@ -126,128 +139,91 @@ fun TileWallScreen(
                 viewportWidth = coords.size.width.toFloat()
                 viewportHeight = coords.size.height.toFloat()
             }
-            // 自定义手势识别：短按拖动 → 平移磁贴墙；长按后拖动 → 拖动磁贴交换位置
+            // 长按拖动：交换磁贴位置（用 detectDragGesturesAfterLongPress 可靠检测长按）
             .pointerInput(Unit) {
-                while (true) {
-                    awaitPointerEventScope {
-                    // 等待第一个按下事件（兼容方案，不依赖 awaitFirstDown 扩展函数）
-                    var down: PointerInputChange? = null
-                    while (down == null) {
-                        val initEvent = awaitPointerEvent()
-                        down = initEvent.changes.firstOrNull { it.pressed }
-                    }
-                    val downChange = down
-                    val downPosition = downChange.position
-                    val downTime = System.currentTimeMillis()
-                    var isPanning = false
-                    var consumedAsDrag = false
-
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == downChange.id } ?: break
-                        if (!change.pressed) break
-
-                        val dx = change.position.x - downPosition.x
-                        val dy = change.position.y - downPosition.y
-                        val moved = sqrt(dx * dx + dy * dy)
-                        val elapsed = System.currentTimeMillis() - downTime
-
-                        when {
-                            // 长按触发：进入磁贴拖动模式（前提：尚未进入平移模式）
-                            !isPanning && draggedIndex == null &&
-                                elapsed >= longPressTimeoutMs && moved < touchSlop -> {
-                                val xInContent = downPosition.x - offsetX
-                                val yInContent = downPosition.y - offsetY
-                                for (i in placements.indices) {
-                                    val (px, py) = placements[i]
-                                    val (sw, sh) = tileSpans.getOrNull(i) ?: continue
-                                    if (xInContent >= px && xInContent < px + sw * cellPx &&
-                                        yInContent >= py && yInContent < py + sh * cellPx
-                                    ) {
-                                        draggedIndex = i
-                                        dragOffsetX = 0f
-                                        dragOffsetY = 0f
-                                        break
-                                    }
-                                }
-                                change.consume()
-                            }
-
-                            // 已进入磁贴拖动模式：跟随手指并实时 swap
-                            draggedIndex != null -> {
-                                val dragX = change.positionChange().x
-                                val dragY = change.positionChange().y
-                                dragOffsetX += dragX
-                                dragOffsetY += dragY
-
-                                val draggedIdx = draggedIndex ?: continue
-                                val placement = placements.getOrNull(draggedIdx) ?: continue
-                                val span = tileSpans.getOrNull(draggedIdx) ?: continue
-                                val draggedCenterX =
-                                    placement.first + span.first * cellPx / 2 + dragOffsetX
-                                val draggedCenterY =
-                                    placement.second + span.second * cellPx / 2 + dragOffsetY
-
-                                // 找出包含被拖磁贴中心点的目标磁贴
-                                for (i in placements.indices) {
-                                    if (i == draggedIdx) continue
-                                    val (px, py) = placements[i]
-                                    val (sw, sh) = tileSpans[i]
-                                    if (draggedCenterX >= px && draggedCenterX < px + sw * cellPx &&
-                                        draggedCenterY >= py && draggedCenterY < py + sh * cellPx
-                                    ) {
-                                        val oldDraggedPlacement = placements[draggedIdx]
-                                        val oldTargetPlacement = placements[i]
-                                        onReorder(draggedIdx, i)
-                                        draggedIndex = i
-                                        // 调整 dragOffset 使被拖磁贴保持在手指下方
-                                        dragOffsetX += oldDraggedPlacement.first - oldTargetPlacement.first
-                                        dragOffsetY += oldDraggedPlacement.second - oldTargetPlacement.second
-                                        break
-                                    }
-                                }
-                                change.consume()
-                                consumedAsDrag = true
-                            }
-
-                            // 平移磁贴墙：超过 touch slop 后启动
-                            !isPanning && moved >= touchSlop -> {
-                                isPanning = true
-                            }
-
-                            // 平移进行中：跟随手指移动磁贴墙
-                            isPanning -> {
-                                val dragX = change.positionChange().x
-                                val dragY = change.positionChange().y
-                                var newX = offsetX + dragX
-                                var newY = offsetY + dragY
-                                val maxX = max(0f, contentWidth - viewportWidth)
-                                val maxY = max(0f, contentHeight - viewportHeight)
-                                // 自由拖动范围：四方向均允许 30% 视口尺寸的弹性越界
-                                newX = newX.coerceIn(
-                                    -maxX - viewportWidth * 0.3f,
-                                    viewportWidth * 0.3f
-                                )
-                                newY = newY.coerceIn(
-                                    -maxY - viewportHeight * 0.3f,
-                                    viewportHeight * 0.3f
-                                )
-                                offsetX = newX
-                                offsetY = newY
-                                change.consume()
-                                consumedAsDrag = true
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        // 长按触发，找到被按下的磁贴
+                        val xInContent = offset.x - offsetX
+                        val yInContent = offset.y - offsetY
+                        for (i in placements.indices) {
+                            val (px, py) = placements[i]
+                            val (sw, sh) = tileSpans.getOrNull(i) ?: continue
+                            if (xInContent >= px && xInContent < px + sw * cellPx &&
+                                yInContent >= py && yInContent < py + sh * cellPx
+                            ) {
+                                draggedIndex = i
+                                dragOffsetX = 0f
+                                dragOffsetY = 0f
+                                break
                             }
                         }
-                    }
+                    },
+                    onDrag = { change, dragAmount ->
+                        if (draggedIndex == null) return@detectDragGesturesAfterLongPress
+                        change.consume()
+                        dragOffsetX += dragAmount.x
+                        dragOffsetY += dragAmount.y
 
-                    // 手指抬起：结束拖动磁贴
-                    if (draggedIndex != null) {
+                        val draggedIdx = draggedIndex ?: return@detectDragGesturesAfterLongPress
+                        val placement = placements.getOrNull(draggedIdx) ?: return@detectDragGesturesAfterLongPress
+                        val span = tileSpans.getOrNull(draggedIdx) ?: return@detectDragGesturesAfterLongPress
+                        val draggedCenterX = placement.first + span.first * cellPx / 2 + dragOffsetX
+                        val draggedCenterY = placement.second + span.second * cellPx / 2 + dragOffsetY
+
+                        // 找出包含被拖磁贴中心点的目标磁贴并实时交换
+                        for (i in placements.indices) {
+                            if (i == draggedIdx) continue
+                            val (px, py) = placements[i]
+                            val (sw, sh) = tileSpans[i]
+                            if (draggedCenterX >= px && draggedCenterX < px + sw * cellPx &&
+                                draggedCenterY >= py && draggedCenterY < py + sh * cellPx
+                            ) {
+                                val oldDraggedPlacement = placements[draggedIdx]
+                                val oldTargetPlacement = placements[i]
+                                onReorder(draggedIdx, i)
+                                draggedIndex = i
+                                // 调整 dragOffset 使被拖磁贴保持在手指下方
+                                dragOffsetX += oldDraggedPlacement.first - oldTargetPlacement.first
+                                dragOffsetY += oldDraggedPlacement.second - oldTargetPlacement.second
+                                break
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        draggedIndex = null
+                        dragOffsetX = 0f
+                        dragOffsetY = 0f
+                    },
+                    onDragCancel = {
                         draggedIndex = null
                         dragOffsetX = 0f
                         dragOffsetY = 0f
                     }
+                )
+            }
+            // 短按拖动：平移磁贴墙（仅在未进入长按拖动模式时生效）
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDrag = { change, dragAmount ->
+                        // 长按拖动模式进行中时不平移
+                        if (draggedIndex != null) return@detectDragGestures
+                        change.consume()
+                        val maxX = max(0f, contentWidth - viewportWidth)
+                        val maxY = max(0f, contentHeight - viewportHeight)
+                        // 自由拖动范围：四方向均允许 30% 视口尺寸的弹性越界
+                        val newX = (offsetX + dragAmount.x).coerceIn(
+                            -maxX - viewportWidth * 0.3f,
+                            viewportWidth * 0.3f
+                        )
+                        val newY = (offsetY + dragAmount.y).coerceIn(
+                            -maxY - viewportHeight * 0.3f,
+                            viewportHeight * 0.3f
+                        )
+                        offsetX = newX
+                        offsetY = newY
                     }
-                }
+                )
             }
     ) {
         Layout(
@@ -276,6 +252,7 @@ fun TileWallScreen(
                             spanWidth = span.first,
                             spanHeight = span.second,
                             isPlaying = isPlaying && track.id == currentTrack?.id,
+                            showTitle = showTitle,
                             onClick = { onTrackClick(track) },
                             cellPx = cellPx
                         )
@@ -338,7 +315,9 @@ fun TileWallScreen(
                     }
                 }
             },
-            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            modifier = Modifier
+                .padding(top = with(density) { topInsetPx.toDp() })
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
         )
 
         // 顶部浮层标题栏
@@ -355,6 +334,10 @@ fun TileWallScreen(
                     )
                 )
                 .statusBarsPadding()
+                .onGloballyPositioned { coords ->
+                    // 测量标题栏实际高度（含状态栏 padding），供磁贴墙顶部留白使用
+                    topInsetPx = coords.size.height.toFloat()
+                }
         ) {
             Row(
                 modifier = Modifier
@@ -375,20 +358,63 @@ fun TileWallScreen(
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 13.sp
                     )
-                    // 重新扫描：刷新歌词等元数据
-                    IconButton(onClick = onRescan) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "重新扫描",
-                            tint = Color(0xFFBB86FC)
-                        )
-                    }
-                    IconButton(onClick = onImportClick) {
-                        Icon(
-                            imageVector = Icons.Filled.FolderOpen,
-                            contentDescription = "Import Folder",
-                            tint = Color(0xFFBB86FC)
-                        )
+                    // 设置按钮：点击弹出菜单（导入文件夹、重新扫描、显示标题开关）
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = "设置",
+                                tint = Color(0xFFBB86FC)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导入文件夹") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onImportClick()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.FolderOpen,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重新扫描") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRescan()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("显示歌曲标题") },
+                                onClick = {
+                                    showTitle = !showTitle
+                                    prefs.edit().putBoolean("show_tile_title", showTitle).apply()
+                                },
+                                leadingIcon = {
+                                    Switch(
+                                        checked = showTitle,
+                                        onCheckedChange = {
+                                            showTitle = it
+                                            prefs.edit().putBoolean("show_tile_title", it).apply()
+                                        }
+                                    )
+                                },
+                                trailingIcon = {}
+                            )
+                        }
                     }
                 }
             }
@@ -448,6 +474,7 @@ private fun TileContent(
     spanWidth: Int,
     spanHeight: Int,
     isPlaying: Boolean,
+    showTitle: Boolean,
     onClick: () -> Unit,
     cellPx: Float
 ) {
@@ -522,19 +549,21 @@ private fun TileContent(
             }
         }
 
-        // 底部渐变遮罩
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = if (track.coverUri != null) 0.65f else 0.45f)
+        // 底部渐变遮罩：仅在显示标题时绘制（用于衬托标题文字）
+        if (showTitle) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = if (track.coverUri != null) 0.65f else 0.45f)
+                            )
                         )
                     )
-                )
-        )
+            )
+        }
 
         // 正在播放时：右上角发光点
         if (isPlaying) {
@@ -548,15 +577,17 @@ private fun TileContent(
             )
         }
 
-        // 标题
-        Text(
-            text = track.title,
-            color = Color.White,
-            maxLines = if (spanHeight >= 2) 3 else 2,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .padding(8.dp)
-                .align(Alignment.BottomStart)
-        )
+        // 标题：受开关控制
+        if (showTitle) {
+            Text(
+                text = track.title,
+                color = Color.White,
+                maxLines = if (spanHeight >= 2) 3 else 2,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .padding(8.dp)
+                    .align(Alignment.BottomStart)
+            )
+        }
     }
 }

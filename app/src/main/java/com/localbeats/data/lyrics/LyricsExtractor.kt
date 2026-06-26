@@ -76,6 +76,23 @@ object LyricsExtractor {
                 return cleanLyrics(primary)
             }
 
+            // 兜底1：少数工具把歌词写入 COMMENT 字段，用启发式判断避免误把短评论当歌词
+            val comment: String? = try {
+                tag.getFirst(FieldKey.COMMENT)
+            } catch (_: Throwable) { null }
+            if (comment != null && comment.isNotBlank() && looksLikeLyrics(comment)) {
+                Log.i(TAG, "兜底提取到歌词（COMMENT），长度=${comment.length}")
+                return cleanLyrics(comment)
+            }
+
+            // 兜底2：反射遍历 tag 所有字段，查找 id 含 LYRIC/USLT 的非标准字段
+            // （覆盖 jaudiotagger FieldKey 未映射的自定义 TXXX 帧）
+            val reflective = extractByReflection(tag)
+            if (reflective != null && reflective.isNotBlank()) {
+                Log.i(TAG, "反射兜底提取到歌词，长度=${reflective.length}")
+                return cleanLyrics(reflective)
+            }
+
             Log.i(TAG, "未找到歌词字段: $uri")
             null
         } catch (t: Throwable) {
@@ -106,5 +123,59 @@ object LyricsExtractor {
         }
         text = lines.joinToString("\n").trim()
         return text
+    }
+
+    /**
+     * 启发式判断文本是否像歌词（避免把短评论误判为歌词）。
+     * 满足以下任一条件视为歌词：
+     * - 含 LRC 时间戳（[mm:ss.xx]）
+     * - 多行文本（≥3 行）且总长度 ≥30
+     */
+    private fun looksLikeLyrics(text: String): Boolean {
+        if (text.contains(Regex("""\[\d+:\d+"""))) return true
+        val lineCount = text.lines().count { it.isNotBlank() }
+        return lineCount >= 3 && text.length >= 30
+    }
+
+    /**
+     * 反射遍历 tag 所有字段，查找 id 含 LYRIC/USLT 的非标准字段并取内容。
+     * jaudiotagger 不同格式 TagField 的内容获取方法不一，用反射尽量兼容；
+     * 任何反射异常都安全吞掉，返回 null。
+     */
+    private fun extractByReflection(tag: Any): String? {
+        return try {
+            val getFieldsMethod = tag.javaClass.getMethod("getFields")
+            val fieldsObj = getFieldsMethod.invoke(tag) ?: return null
+            // jaudiotagger 的 getFields() 返回 Iterator<TagField>
+            if (fieldsObj !is Iterator<*>) return null
+            while (fieldsObj.hasNext()) {
+                val field = fieldsObj.next() ?: continue
+                val id = try {
+                    field.javaClass.getMethod("getId").invoke(field) as? String
+                } catch (_: Throwable) { null }
+                if (id == null || !(id.contains("LYRIC", true) ||
+                        id.contains("USLT", true) || id.contains("LYR", true))) {
+                    continue
+                }
+                // 依次尝试 getContent / getFirstContent / toString 取内容
+                val content = try {
+                    field.javaClass.getMethod("getContent").invoke(field) as? String
+                } catch (_: Throwable) {
+                    try {
+                        field.javaClass.getMethod("getFirstContent").invoke(field) as? String
+                    } catch (_: Throwable) {
+                        try {
+                            field.toString()
+                        } catch (_: Throwable) { null }
+                    }
+                }
+                if (!content.isNullOrBlank() && looksLikeLyrics(content)) {
+                    return content
+                }
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
     }
 }

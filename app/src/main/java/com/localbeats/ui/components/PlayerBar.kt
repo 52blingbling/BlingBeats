@@ -79,7 +79,9 @@ fun PlayerBar(
     // 胶囊形状：圆角设为很大的值，配合高度形成 pill
     val pillShape = RoundedCornerShape(50)
     // compact 模式：横屏下让胶囊变短（宽度收窄），更精致
-    val horizontalPadding = if (compact) 64.dp else 16.dp
+    val horizontalPadding = if (compact) 24.dp else 16.dp
+    // compact 模式：横屏下不占满宽度，收窄居中显示
+    val widthModifier = if (compact) Modifier.fillMaxWidth(0.42f) else Modifier.fillMaxWidth()
 
     // 解析歌词：LRC 格式可按播放进度同步显示当前行；纯文本则整段滚动
     val parsedLyrics = remember(lyrics) { LyricsParser.parse(lyrics) }
@@ -99,7 +101,7 @@ fun PlayerBar(
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .then(widthModifier)
             .padding(horizontal = horizontalPadding)
             .padding(bottom = 12.dp)
             .navigationBarsPadding()
