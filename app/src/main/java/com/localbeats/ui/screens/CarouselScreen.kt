@@ -168,29 +168,35 @@ fun CarouselScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 0.dp),
                 flingBehavior = flingBehavior,
-                // 预加载左右各 3 页，确保 5 个可见磁贴在滑动中全部保持激活状态，根本上解决动态销毁导致的闪烁
-                beyondBoundsPageCount = 3
+                // beyondBoundsPageCount = 4：左右各预加载 4 页（共 9 页激活），
+                // 保证 currentPage 在滑动中整数跳跃时，±2 的可见封面始终在保护范围内不被回收，
+                // offset ±3 和 ±4 作为不可见的缓冲层，从根本上解决封面数量变化的问题
+                beyondBoundsPageCount = 4
             ) { page ->
                 val track = trackAt(page) ?: return@HorizontalPager
                 val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                 val absOffset = abs(pageOffset)
  
+                // absOffset >= 3 时完全不渲染（alpha = 0），节省 GPU，同时作为缓冲防止回收
+                if (absOffset >= 3f) return@HorizontalPager
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(10f - absOffset)
                         .graphicsLayer {
-                            // 堆叠：拉近间距实现 5 层层叠递进的 3D 视觉深度
+                            // 堆叠：收拢间距产生 5 层 3D 层叠效果
                             translationX = pageOffset * size.width * 0.84f
-                            // 渐进缩小：中心 1.0，第一圈 0.8，第二圈 0.6
+                            // 渐进缩小：offset0=1.0, offset1=0.80, offset2=0.60
                             val s = (1f - absOffset * 0.20f).coerceIn(0.5f, 1f)
                             scaleX = s
                             scaleY = s
-                            // 3D 旋转倾斜度
+                            // 3D 旋转倾斜
                             rotationY = pageOffset * -28f
                             cameraDistance = 8f * density
-                            // 渐变透明度：中心 1.0，第一圈 0.67，第二圈 0.34，第三圈及之外（absOffset >= 3）完全透明
-                            alpha = (1f - absOffset * 0.33f).coerceIn(0f, 1f)
+                            // 平滑透明度渐变：offset0=1.0, offset1=0.67, offset2=0.33
+                            // offset 3 时归零（通过上方 early return 已跳过，此处做保底）
+                            alpha = (1f - absOffset * 0.34f).coerceIn(0f, 1f)
                         }
                 ) {
                     CarouselItem(
@@ -205,6 +211,8 @@ fun CarouselScreen(
         }
 
         // 顶部渐变遮罩与标题
+        // 使用 windowInsetsPadding 而非 statusBarsPadding，避免旋转时首帧使用旧方向的状态栏高度
+        // 导致标题位置跳动（竖屏→横屏全屏时，statusBarsPadding 有一帧延迟才更新为 0）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -218,7 +226,7 @@ fun CarouselScreen(
                         )
                     )
                 )
-                .statusBarsPadding()
+                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars)
                 .padding(top = 8.dp, bottom = 8.dp)
         ) {
             Text(

@@ -162,19 +162,8 @@ fun TileWallScreen(
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
     val currentOnReorder by rememberUpdatedState(onReorder)
 
-    // 性能优化核心：小列表（少于 100 首）完全不剔除，确保绝对稳定；大列表仅做 Y 轴大缓冲区过滤，避免 Coil 加载过多封面
-    val visibleTracks = if (tracks.size <= 100 || containerWidth == 0 || containerHeight == 0) {
-        tracks
-    } else {
-        val hPx = containerHeight.toFloat()
-        tracks.filter { track ->
-            val pos = tilePositions[track.id] ?: (0 to 0)
-            val span = tileSpansMap[track.id] ?: (1 to 1)
-            val y = pos.second * cellPx + offsetY
-            val h = span.second * cellPx
-            y + h > -hPx * 2f && y < hPx * 3f
-        }
-    }
+    // 所有曲目全部渲染，绝对稳定，无剔除逻辑，避免任何条件下的磁贴消失问题
+    val visibleTracks = tracks
 
     Box(
         modifier = modifier
@@ -192,19 +181,15 @@ fun TileWallScreen(
                         val wPx = containerWidth.toFloat()
                         val hPx = containerHeight.toFloat()
                         val maxX = max(0f, contentWidth - wPx)
-                        // X轴限制：最多允许向左/右多滑出屏幕宽度的 30%
+                        // X轴限制：仅允许左右轻微越界 15%，竖屏下横向拖动空间很小
                         offsetX = (offsetX + dragAmount.x).coerceIn(
-                            -maxX - wPx * 0.3f,
-                            wPx * 0.3f
+                            -maxX - wPx * 0.15f,
+                            wPx * 0.15f
                         )
-                        // Y轴限制：标准的滚动视图边界，外加 20% 的屏幕高度作为弹性越界缓冲
-                        val playerBarHeight = 100f
-                        val maxScrollUp = topInsetPx
-                        val minScrollDown = kotlin.math.min(topInsetPx, hPx - bottomInsetPx - playerBarHeight - contentHeight)
-                        
-                        val minY = minScrollDown - hPx * 0.2f
-                        val maxY = maxScrollUp + hPx * 0.2f
-                        
+                        // Y轴限制：向下最多拉到顶部标题栏高度 + 一个格子高度，
+                        // 足以把被标题栏遮住的顶部磁贴拉入视野，不会拖拉过多
+                        val maxY = topInsetPx + cellPx
+                        val minY = -(contentHeight - hPx).coerceAtLeast(0f) - hPx * 0.2f
                         offsetY = (offsetY + dragAmount.y).coerceIn(minY, maxY)
                     }
                 )
