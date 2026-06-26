@@ -71,6 +71,7 @@ dependencies {
 
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

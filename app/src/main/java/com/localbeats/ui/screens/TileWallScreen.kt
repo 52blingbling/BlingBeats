@@ -186,9 +186,8 @@ fun TileWallScreen(
                             -maxX - wPx * 0.15f,
                             wPx * 0.15f
                         )
-                        // Y轴限制：向下最多拉到顶部标题栏高度 + 一个格子高度，
-                        // 足以把被标题栏遮住的顶部磁贴拉入视野，不会拖拉过多
-                        val maxY = topInsetPx + cellPx
+                        // Y轴限制：向下最多拉 3 格高度，足以把顶部被标题栏遮住的磁贴拉入视野
+                        val maxY = cellPx * 3f
                         val minY = -(contentHeight - hPx).coerceAtLeast(0f) - hPx * 0.2f
                         offsetY = (offsetY + dragAmount.y).coerceIn(minY, maxY)
                     }

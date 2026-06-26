@@ -1,67 +1,77 @@
 package com.localbeats.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerDefaults
-import androidx.compose.foundation.pager.PagerSnapDistance
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Text
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import com.localbeats.data.lyrics.LyricsParser
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
+import androidx.palette.graphics.Palette
+import com.localbeats.data.lyrics.LyricsParser
 import com.localbeats.data.model.MusicTrack
 import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * 横屏专辑轮播：
- * - 当前曲目专辑正对显示（旋转 0）
- * - 左侧专辑堆叠并 3D 向右倾斜（rotationY < 0，右侧朝向观察者）
- * - 右侧专辑堆叠并 3D 向左倾斜（rotationY > 0，左侧朝向观察者）
- * - 滑动切换居中专辑即播放对应曲目
- *
- * 关于旋转重播修复：监听 settledPage 而非 currentPage，且仅当目标曲目与当前
- * 播放曲目不同时才调用 onTrackClick。旋转时 initialPage 即当前曲目，
- * tracks[page].id == currentTrack?.id 成立，因此跳过调用，避免重置 MediaItem。
+ * 电影胶卷横屏播放器：
+ * - 专辑封面横向连排，形成胶片带效果
+ * - 顶部和底部有胶片穿孔装饰
+ * - 背景颜色跟随当前封面主色动态变化
+ * - 拖动时每经过一张封面触发一次震动
+ * - 松手后弹性吸附到最近封面并切歌
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CarouselScreen(
     tracks: List<MusicTrack>,
@@ -77,66 +87,73 @@ fun CarouselScreen(
     onOrientationToggleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    // 循环切换：用较大的虚拟页数实现近似无限循环，page 取模映射到真实曲目。
-    // 不能用 Int.MAX_VALUE：HorizontalPager 的滚动范围 = (pageCount-1)*pageWidth 会溢出，
-    // 导致无法滑动。100k 页足够（约 5 万次循环），且 pageCount*pageWidth 远小于 Int.MAX_VALUE。
-    val virtualCount = if (tracks.isEmpty()) 0 else if (tracks.size == 1) 1 else 100_000
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val screenHeightDp = configuration.screenHeightDp.dp
+    val frameSize = (screenHeightDp * 0.70f).coerceAtMost(290.dp).coerceAtLeast(160.dp)
+    val gapDp = 12.dp
+
+    val framePx = with(density) { frameSize.toPx() }
+    val gapPx = with(density) { gapDp.toPx() }
+    val stridePx = framePx + gapPx
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+
     val startIndex = tracks.indexOfFirst { it.id == currentTrack?.id }.coerceAtLeast(0)
-    // 初始页位于中间，左右各约 5 万页可滑，足够循环
-    val startVirtual = if (virtualCount <= 1) 0 else virtualCount / 2 + startIndex
-    val pagerState = rememberPagerState(
-        initialPage = startVirtual,
-        pageCount = { virtualCount }
-    )
+    // scrollOffset = -index * stride means that track[index] is centered
+    val scrollOffset = remember { Animatable(-startIndex * stridePx) }
+    var lastHapticIdx by remember { mutableIntStateOf(startIndex) }
 
-    // 虚拟页 → 真实曲目（取模，兼容负数）
-    fun trackAt(virtualPage: Int): MusicTrack? {
-        if (tracks.isEmpty()) return null
-        val realIndex = ((virtualPage % tracks.size) + tracks.size) % tracks.size
-        return tracks.getOrNull(realIndex)
-    }
-
-    // 用户滑动停止后（settledPage）切换到对应曲目
-    // 用 tracks 作为 key 之一，避免 tracks 变化后 trackAt 闭包捕获旧值
-    LaunchedEffect(pagerState, tracks) {
-        snapshotFlow { pagerState.settledPage }
-            .collectLatest { page ->
-                val track = trackAt(page) ?: return@collectLatest
-                if (track.id != currentTrack?.id) {
-                    onTrackClick(track)
-                }
-            }
-    }
-
-    // 外部切歌（如播放下一首、点磁贴）时，把轮播平滑滚到对应曲目
-    // 选择离当前页最近的虚拟页，保证最短路径滚动
-    var isFirstLoad by remember { mutableStateOf(true) }
+    // Sync when external track selection changes
     LaunchedEffect(currentTrack?.id, tracks) {
-        val targetTrack = currentTrack ?: return@LaunchedEffect
         if (tracks.isEmpty()) return@LaunchedEffect
-        val targetReal = tracks.indexOfFirst { it.id == targetTrack.id }
-        if (targetReal < 0) return@LaunchedEffect
-        val currentVirtual = pagerState.currentPage
-        val currentReal = ((currentVirtual % tracks.size) + tracks.size) % tracks.size
-        // 取离 currentReal 最近的等价虚拟页
-        val targetVirtual = currentVirtual + (targetReal - currentReal)
-
-        if (isFirstLoad) {
-            pagerState.scrollToPage(targetVirtual)
-            isFirstLoad = false
-        } else if (!pagerState.isScrollInProgress && pagerState.settledPage != targetVirtual) {
-            pagerState.animateScrollToPage(targetVirtual)
+        val targetIdx = tracks.indexOfFirst { it.id == currentTrack?.id }
+        if (targetIdx < 0) return@LaunchedEffect
+        val targetOffset = -targetIdx * stridePx
+        if (abs(scrollOffset.value - targetOffset) > 2f) {
+            scrollOffset.animateTo(targetOffset, spring(dampingRatio = 0.8f, stiffness = 300f))
         }
     }
 
-    // 自定义 fling：基于速度的快→慢减速动画，支持跨多页甩动，最终自然吸附
-    val flingBehavior = PagerDefaults.flingBehavior(
-        state = pagerState,
-        pagerSnapDistance = PagerSnapDistance.atMost(20),
-        snapPositionalThreshold = 0.5f
+    // Dynamic background: extract dark vibrant color from album art
+    var rawBgColor by remember { mutableStateOf(Color(0xFF0A0A0A)) }
+    val bgColor by animateColorAsState(
+        targetValue = rawBgColor,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "filmBg"
     )
 
-    // 解析歌词
+    LaunchedEffect(currentTrack?.coverUri) {
+        val uri = currentTrack?.coverUri
+        if (uri == null) { rawBgColor = Color(0xFF0A0A0A); return@LaunchedEffect }
+        withContext(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+                if (bitmap != null) {
+                    val palette = Palette.from(bitmap).generate()
+                    val raw = palette.getDarkVibrantColor(
+                        palette.getDarkMutedColor(
+                            palette.getDominantColor(0xFF0A0A0A.toInt())
+                        )
+                    )
+                    val c = Color(raw)
+                    // Clamp brightness so background stays dark and cinematic
+                    rawBgColor = Color(
+                        red   = (c.red   * 0.45f).coerceIn(0f, 0.30f),
+                        green = (c.green * 0.45f).coerceIn(0f, 0.30f),
+                        blue  = (c.blue  * 0.45f).coerceIn(0f, 0.30f)
+                    )
+                }
+            } catch (_: Exception) { rawBgColor = Color(0xFF0A0A0A) }
+        }
+    }
+
+    // Lyrics
     val parsedLyrics = remember(currentTrack?.lyrics) { LyricsParser.parse(currentTrack?.lyrics) }
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
     val currentLyricIndex = if (isSynced) {
@@ -149,149 +166,239 @@ fun CarouselScreen(
         else -> null
     }
 
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val screenHeightDp = configuration.screenHeightDp.dp
-    // 动态计算封面大小，将顶部标题和底部歌词推至屏幕边缘，最大化封面尺寸以展现画报级沉浸感
-    val coverSize = (screenHeightDp - 70.dp).coerceAtMost(390.dp).coerceAtLeast(240.dp)
+    // Snap to nearest frame after drag ends
+    fun snapToNearest() {
+        coroutineScope.launch {
+            if (tracks.isEmpty()) return@launch
+            val idx = ((-scrollOffset.value) / stridePx)
+                .roundToInt().coerceIn(0, tracks.lastIndex)
+            scrollOffset.animateTo(
+                targetValue = -idx * stridePx,
+                animationSpec = spring(dampingRatio = 0.70f, stiffness = 340f)
+            )
+            tracks.getOrNull(idx)?.let { track ->
+                if (track.id != currentTrack?.id) onTrackClick(track)
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
+            .then(
+                Modifier.background(
+                    Brush.radialGradient(
+                        colors = listOf(bgColor, Color(0xFF060606)),
+                        radius = screenWidthPx * 0.75f,
+                        center = Offset(screenWidthPx / 2f, with(density) { configuration.screenHeightDp.dp.toPx() } / 2f)
+                    )
+                )
+            )
+            .pointerInput(stridePx, tracks.size) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { snapToNearest() },
+                    onDragCancel = { snapToNearest() },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        if (tracks.isEmpty()) return@detectHorizontalDragGestures
+                        val minScroll = -(tracks.lastIndex * stridePx) - stridePx * 0.4f
+                        val maxScroll = stridePx * 0.4f
+                        coroutineScope.launch {
+                            scrollOffset.snapTo(
+                                (scrollOffset.value + dragAmount).coerceIn(minScroll, maxScroll)
+                            )
+                        }
+                        // Haptic: fire every time we cross into a new frame
+                        val nowIdx = ((-scrollOffset.value) / stridePx)
+                            .roundToInt().coerceIn(0, tracks.lastIndex)
+                        if (nowIdx != lastHapticIdx) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            lastHapticIdx = nowIdx
+                        }
+                    }
+                )
+            }
     ) {
         if (tracks.isEmpty()) {
             Text(
                 text = "No music found",
-                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                color = Color.White.copy(alpha = 0.4f),
                 fontSize = 16.sp,
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 0.dp),
-                flingBehavior = flingBehavior,
-                // beyondBoundsPageCount = 4：左右各预加载 4 页（共 9 页激活），
-                // 保证 currentPage 在滑动中整数跳跃时，±2 的可见封面始终在保护范围内不被回收，
-                // offset ±3 和 ±4 作为不可见的缓冲层，从根本上解决封面数量变化的问题
-                beyondBoundsPageCount = 4
-            ) { page ->
-                val track = trackAt(page) ?: return@HorizontalPager
-                val pageOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-                val absOffset = abs(pageOffset)
- 
-                // absOffset >= 3 时完全不渲染（alpha = 0），节省 GPU，同时作为缓冲防止回收
-                if (absOffset >= 3f) return@HorizontalPager
+            // ── Film strip sprocket holes (top & bottom) ──────────────────────
+            val stripHeightDp = 20.dp
+            val holeRadiusDp = 5.dp
+            val holeSpacingDp = 22.dp
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(10f - absOffset)
-                        .graphicsLayer {
-                            // 堆叠：收拢间距产生 5 层 3D 层叠效果
-                            translationX = pageOffset * size.width * 0.84f
-                            // 渐进缩小：offset0=1.0, offset1=0.80, offset2=0.60
-                            val s = (1f - absOffset * 0.20f).coerceIn(0.5f, 1f)
-                            scaleX = s
-                            scaleY = s
-                            // 3D 旋转倾斜
-                            rotationY = pageOffset * -28f
-                            cameraDistance = 8f * density
-                            // 平滑透明度渐变：offset0=1.0, offset1=0.67, offset2=0.33
-                            // offset 3 时归零（通过上方 early return 已跳过，此处做保底）
-                            alpha = (1f - absOffset * 0.34f).coerceIn(0f, 1f)
-                        }
-                ) {
-                    CarouselItem(
-                        track = track,
-                        isPlaying = isPlaying && track.id == currentTrack?.id,
-                        onClick = { onTrackClick(track) },
-                        size = coverSize,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val stripH = stripHeightDp.toPx()
+                val holeR = holeRadiusDp.toPx()
+                val holeSpacing = holeSpacingDp.toPx()
+                val filmEdgeColor = Color(0xFF0D0D0D)
+                val holeBgColor = Color(0xFF1A1A1A)
+                val holeRimColor = Color(0xFF333333)
+
+                // Top strip background
+                drawRect(filmEdgeColor, topLeft = Offset(0f, 0f), size = Size(size.width, stripH))
+                // Bottom strip background
+                drawRect(filmEdgeColor, topLeft = Offset(0f, size.height - stripH), size = Size(size.width, stripH))
+
+                // Sprocket holes – animated with scroll so holes move with the film
+                val holePhase = (scrollOffset.value * 0.5f) % holeSpacing
+                var x = holePhase - holeSpacing
+                while (x < size.width + holeSpacing) {
+                    val cx = x
+                    val topCy = stripH / 2f
+                    val botCy = size.height - stripH / 2f
+                    // Hole fill
+                    drawCircle(holeBgColor, radius = holeR, center = Offset(cx, topCy))
+                    drawCircle(holeBgColor, radius = holeR, center = Offset(cx, botCy))
+                    // Hole rim
+                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, topCy), style = Stroke(width = 1.2f))
+                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, botCy), style = Stroke(width = 1.2f))
+                    x += holeSpacing
+                }
+
+                // Center frame spotlight border
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val halfFrame = framePx / 2f
+                drawRect(
+                    color = Color.White.copy(alpha = 0.18f),
+                    topLeft = Offset(cx - halfFrame, cy - halfFrame),
+                    size = Size(framePx, framePx),
+                    style = Stroke(width = 2.5f)
+                )
+            }
+
+            // ── Album cover frames ─────────────────────────────────────────────
+            tracks.forEachIndexed { index, track ->
+                val itemCenterOffset = scrollOffset.value + index * stridePx
+                val distFromCenter = abs(itemCenterOffset)
+                val normalizedDist = (distFromCenter / stridePx).coerceIn(0f, 1f)
+
+                // Only render covers within ±3 strides of center
+                if (distFromCenter <= stridePx * 3.2f) {
+                    val scale = lerp(1f, 0.62f, normalizedDist)
+                    val itemAlpha = lerp(1f, 0.35f, normalizedDist)
+
+                    Box(
+                        modifier = Modifier
+                            .size(frameSize)
+                            .align(Alignment.Center)
+                            .graphicsLayer {
+                                translationX = itemCenterOffset
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = itemAlpha
+                            }
+                    ) {
+                        CarouselItem(
+                            track = track,
+                            isPlaying = isPlaying && track.id == currentTrack?.id,
+                            onClick = {
+                                coroutineScope.launch {
+                                    scrollOffset.animateTo(
+                                        -index * stridePx,
+                                        spring(dampingRatio = 0.70f, stiffness = 340f)
+                                    )
+                                    if (track.id != currentTrack?.id) onTrackClick(track)
+                                }
+                            },
+                            size = frameSize
+                        )
+                    }
                 }
             }
-        }
 
-        // 顶部渐变遮罩与标题
-        // 使用 windowInsetsPadding 而非 statusBarsPadding，避免旋转时首帧使用旧方向的状态栏高度
-        // 导致标题位置跳动（竖屏→横屏全屏时，statusBarsPadding 有一帧延迟才更新为 0）
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.4f),
-                            Color.Transparent
-                        )
-                    )
-                )
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(top = 8.dp, bottom = 8.dp)
-        ) {
-            Text(
-                text = currentTrack?.title ?: "未选择歌曲",
-                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 32.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // 底部歌词
-        if (currentLyricText != null) {
+            // ── Song title (top, near screen edge) ────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp) // 极致贴合底部边缘，留出完整空间给封面
-                    .padding(horizontal = 24.dp)
-            ) {
-                AnimatedContent(
-                    targetState = currentLyricText,
-                    transitionSpec = {
-                        (slideInVertically { it / 2 } + fadeIn(tween(200)))
-                            .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
-                    },
-                    label = "lyric_line",
-                    modifier = Modifier.align(Alignment.Center)
-                ) { line ->
-                    Text(
-                        text = line,
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                        )
                     )
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = 6.dp, bottom = 6.dp)
+            ) {
+                Text(
+                    text = currentTrack?.title ?: "",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 32.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // ── Synced lyrics (bottom, near screen edge) ──────────────────────
+            if (currentLyricText != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
+                            )
+                        )
+                        .padding(bottom = 16.dp, top = 10.dp)
+                        .padding(horizontal = 24.dp)
+                ) {
+                    AnimatedContent(
+                        targetState = currentLyricText,
+                        transitionSpec = {
+                            (slideInVertically { it / 2 } + fadeIn(tween(200)))
+                                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
+                        },
+                        label = "lyric_line",
+                        modifier = Modifier.align(Alignment.Center)
+                    ) { line ->
+                        Text(
+                            text = line,
+                            color = Color.White.copy(alpha = 0.88f),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
+                        )
+                    }
                 }
             }
-        }
 
-        PlayerBar(
-            title = currentTrack?.title ?: "未选择歌曲",
-            artist = currentTrack?.artist,
-            coverUri = currentTrack?.coverUri,
-            lyrics = currentTrack?.lyrics,
-            isPlaying = isPlaying,
-            onPlayPauseClick = onPlayPauseClick,
-            onPreviousClick = onPreviousClick,
-            onNextClick = onNextClick,
-            currentPosition = currentPosition,
-            duration = duration,
-            onSeek = onSeek,
-            compact = true,
-            onOrientationToggleClick = onOrientationToggleClick,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 12.dp)
-        )
+            // ── Compact PlayerBar (bottom-left corner) ────────────────────────
+            PlayerBar(
+                title = currentTrack?.title ?: "未选择歌曲",
+                artist = currentTrack?.artist,
+                coverUri = currentTrack?.coverUri,
+                lyrics = currentTrack?.lyrics,
+                isPlaying = isPlaying,
+                onPlayPauseClick = onPlayPauseClick,
+                onPreviousClick = onPreviousClick,
+                onNextClick = onNextClick,
+                currentPosition = currentPosition,
+                duration = duration,
+                onSeek = onSeek,
+                compact = true,
+                onOrientationToggleClick = onOrientationToggleClick,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 12.dp)
+            )
+        }
     }
 }
+
+/** Linear interpolation helper */
+private fun lerp(start: Float, stop: Float, fraction: Float): Float =
+    start + (stop - start) * fraction
