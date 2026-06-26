@@ -188,8 +188,8 @@ fun TileWallScreen(
                         // 下拉极限：整个磁贴墙拉到底部播放条以下（viewportHeight）
                         // 上划极限：整个磁贴墙拉到顶部以上（-contentHeight - viewportHeight）
                         offsetY = (offsetY + dragAmount.y).coerceIn(
-                            -contentHeight - viewportHeight,
-                            viewportHeight
+                            -100000f,
+                            100000f
                         )
                     }
                 )
