@@ -36,7 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.border
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
@@ -280,12 +280,14 @@ fun TileWallScreen(
                         }
 
                         // 抬起：若处于磁贴拖动模式且检测到目标，执行一次性 reorder
+                        val fromSafe = draggedIndex
+                        val toSafe = dragTargetIndex
+                        if (fromSafe != null && toSafe != null && toSafe != fromSafe &&
+                            fromSafe in currentTracks.indices && toSafe in currentTracks.indices
+                        ) {
+                            currentOnReorder(fromSafe, toSafe)
+                        }
                         if (draggedIndex != null) {
-                            val from = draggedIndex
-                            val to = dragTargetIndex
-                            if (to != null && to != from && from in currentTracks.indices && to in currentTracks.indices) {
-                                currentOnReorder(from, to)
-                            }
                             draggedIndex = null
                             dragOffsetX = 0f
                             dragOffsetY = 0f
