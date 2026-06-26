@@ -22,6 +22,9 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -226,7 +229,7 @@ fun CarouselScreen(
                         )
                     )
                 )
-                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(top = 8.dp, bottom = 8.dp)
         ) {
             Text(
