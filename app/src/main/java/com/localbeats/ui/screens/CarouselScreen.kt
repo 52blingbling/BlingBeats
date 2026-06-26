@@ -2,9 +2,9 @@ package com.localbeats.ui.screens
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,6 +13,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -24,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +73,7 @@ import kotlin.math.roundToInt
  * - 拖动时每经过一张封面触发一次震动
  * - 松手后弹性吸附到最近封面并切歌
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CarouselScreen(
     tracks: List<MusicTrack>,
@@ -185,13 +187,11 @@ fun CarouselScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .then(
-                Modifier.background(
-                    Brush.radialGradient(
-                        colors = listOf(bgColor, Color(0xFF060606)),
-                        radius = screenWidthPx * 0.75f,
-                        center = Offset(screenWidthPx / 2f, with(density) { configuration.screenHeightDp.dp.toPx() } / 2f)
-                    )
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(bgColor, Color(0xFF060606)),
+                    radius = screenWidthPx * 0.75f,
+                    center = Offset(screenWidthPx / 2f, with(density) { configuration.screenHeightDp.dp.toPx() } / 2f)
                 )
             )
             .pointerInput(stridePx, tracks.size) {
