@@ -148,8 +148,8 @@ fun CarouselScreen(
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val screenHeightDp = configuration.screenHeightDp.dp
-    // 动态计算封面大小，为顶部标题和底部歌词留出更紧凑的空间（现在播放条在角落，可以把封面放得更大）
-    val coverSize = (screenHeightDp - 100.dp).coerceAtMost(360.dp).coerceAtLeast(200.dp)
+    // 动态计算封面大小，将顶部标题和底部歌词推至屏幕边缘，最大化封面尺寸以展现画报级沉浸感
+    val coverSize = (screenHeightDp - 70.dp).coerceAtMost(390.dp).coerceAtLeast(240.dp)
 
     Box(
         modifier = modifier
@@ -226,7 +226,7 @@ fun CarouselScreen(
                         )
                     )
                     .statusBarsPadding()
-                    .padding(top = 16.dp, bottom = 32.dp)
+                    .padding(top = 8.dp, bottom = 8.dp)
             ) {
                 Text(
                     text = currentTrack?.title ?: "未选择歌曲",
@@ -245,7 +245,7 @@ fun CarouselScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 72.dp) // 悬浮在 PlayerBar 上方
+                        .padding(bottom = 16.dp) // 极致贴合底部边缘，留出完整空间给封面
                         .padding(horizontal = 24.dp)
                 ) {
                     AnimatedContent(
@@ -286,7 +286,9 @@ fun CarouselScreen(
             onSeek = onSeek,
             compact = true,
             onOrientationToggleClick = onOrientationToggleClick,
-            modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 4.dp)
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 12.dp, bottom = 12.dp)
         )
     }
 }

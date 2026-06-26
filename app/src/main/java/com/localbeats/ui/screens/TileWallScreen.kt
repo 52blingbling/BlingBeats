@@ -131,10 +131,8 @@ fun TileWallScreen(
 
     // 独立的 id→磁贴坐标（单元格 col,row）映射。
     val tilePositions = remember(idSetKey, columns, randomSeed) {
-        mutableStateMapOf<Long, Pair<Int, Int>>().apply {
-            val shuffledTracks = if (randomSeed == 0) tracks else tracks.shuffled(Random(randomSeed.toLong()))
-            packTiles(shuffledTracks, tileSpansMap, columns, this)
-        }
+        val shuffledTracks = if (randomSeed == 0) tracks else tracks.shuffled(Random(randomSeed.toLong()))
+        packTiles(shuffledTracks, tileSpansMap, columns)
     }
 
     // 内容总尺寸（由 tilePositions 派生，跟随交换实时更新）
@@ -434,13 +432,13 @@ private fun computeSpan(track: MusicTrack): Pair<Int, Int> {
     }
 }
 
-/** 打包磁贴位置：按 tracks 顺序贪心放置，写入 out 映射（id → col,row 单元格坐标） */
+/** 打包磁贴位置：按 tracks 顺序贪心放置，返回 id → col,row 单元格坐标的映射 */
 private fun packTiles(
     tracks: List<MusicTrack>,
     spans: Map<Long, Pair<Int, Int>>,
-    columns: Int,
-    out: androidx.compose.runtime.snapshots.SnapshotStateMap<Long, Pair<Int, Int>>
-) {
+    columns: Int
+): Map<Long, Pair<Int, Int>> {
+    val out = HashMap<Long, Pair<Int, Int>>()
     val maxRows = (tracks.size * 2 + 4).coerceAtLeast(16)
     val occupied = Array(columns) { BooleanArray(maxRows) }
     for (track in tracks) {
@@ -464,9 +462,8 @@ private fun packTiles(
         }
         if (!placed) out[track.id] = 0 to 0
     }
+    return out
 }
-
-
 
 private fun canPlace(occupied: Array<BooleanArray>, col: Int, row: Int, w: Int, h: Int, columns: Int, maxRows: Int): Boolean {
     if (col + w > columns) return false
