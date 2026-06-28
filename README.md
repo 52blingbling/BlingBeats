@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 LocalBeats
+# 🎵 BlingBeats
 
 **你的本地音乐播放器**
 
