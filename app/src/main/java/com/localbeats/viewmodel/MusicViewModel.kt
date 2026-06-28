@@ -35,10 +35,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
     init {
-        // 每 50ms 轮询播放进度，高频刷新保证歌词同步极其精准（无延迟感）
+        // 每 16ms（约1帧）轮询播放进度，高频刷新保证歌词同步极其精准（无延迟感）
         viewModelScope.launch {
             while (true) {
-                delay(50)
+                delay(16)
                 // 仅在有当前曲目时才访问 ExoPlayer，避免不必要的访问
                 if (_tracks.value.isNotEmpty()) {
                     try {

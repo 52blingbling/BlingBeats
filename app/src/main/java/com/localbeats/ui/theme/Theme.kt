@@ -42,7 +42,7 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun LocalBeatsTheme(
-    themeMode: Int = 2, // 0=Auto, 1=Light, 2=Dark
+    themeMode: Int = 1, // 0=Auto, 1=Light, 2=Dark
     content: @Composable () -> Unit
 ) {
     val isDark = when (themeMode) {

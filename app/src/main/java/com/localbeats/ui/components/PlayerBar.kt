@@ -95,7 +95,7 @@ fun PlayerBar(
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
     // LRC 同步模式：定位当前行；若处于第一行之前的前奏，回退显示第一行（避免空白）
     val currentLyricIndex = if (isSynced) {
-        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition + 300L)
         if (idx < 0) 0 else idx
     } else -1
     val currentLyricText = when {
@@ -118,6 +118,11 @@ fun PlayerBar(
                 .then(if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
                 .height(barHeight)
                 .clip(pillShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {} // 拦截点击，防止穿透到下方的磁贴
+                )
                 .shadow(
                     elevation = 20.dp,
                     shape = pillShape,
@@ -225,29 +230,66 @@ fun PlayerBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (onOrientationToggleClick != null) {
+                        // 旋转按鈕：液态玻璃风格
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                                            androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                                        )
+                                    )
+                                )
+                                .border(
+                                    width = 0.5.dp,
+                                    brush = Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.45f),
+                                            Color.White.copy(alpha = 0.05f)
+                                        )
+                                    ),
+                                    shape = CircleShape
+                                )
                                 .clickable(onClick = onOrientationToggleClick),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.ScreenRotation,
                                 contentDescription = "Toggle Orientation",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                modifier = Modifier.size(20.dp)
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                     }
 
+                    // 播放/暂停按鈕：苹果液态玻璃风格
+                    // 半透明磨砂玻璃背景 + 顶部高光渐变 + 描边 + 主色图标
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f),
+                                        androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+                                    )
+                                )
+                            )
+                            .border(
+                                width = 0.8.dp,
+                                brush = Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.55f),
+                                        Color.White.copy(alpha = 0.08f)
+                                    )
+                                ),
+                                shape = CircleShape
+                            )
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -266,7 +308,7 @@ fun PlayerBar(
                             Icon(
                                 imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                 contentDescription = if (playing) "Pause" else "Play",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(26.dp)
                             )
                         }

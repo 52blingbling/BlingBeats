@@ -111,8 +111,10 @@ fun CarouselScreen(
     var lastHapticIdx by remember { mutableIntStateOf(startIndex) }
     val velocityTracker = remember { VelocityTracker() }
 
-    // Sync when external track selection changes
+    // Sync when external track selection changes (e.g., PlayerBar prev/next).
+    // Skip if a snap animation is already running to avoid fighting with snapToNearest.
     LaunchedEffect(currentTrack?.id, tracks) {
+        if (scrollOffset.isRunning) return@LaunchedEffect  // snapToNearest is animating, don't interfere
         if (tracks.isEmpty()) return@LaunchedEffect
         val targetIdx = tracks.indexOfFirst { it.id == currentTrack?.id }
         if (targetIdx < 0) return@LaunchedEffect
@@ -153,17 +155,17 @@ fun CarouselScreen(
                 inputStream?.close()
                 if (bitmap != null) {
                     val palette = Palette.from(bitmap).generate()
-                    val raw = palette.getDarkVibrantColor(
-                        palette.getDarkMutedColor(
-                            palette.getDominantColor(0xFF0A0A0A.toInt())
+                    val raw = palette.getVibrantColor(
+                        palette.getMutedColor(
+                            palette.getDominantColor(0xFF1A1A1A.toInt())
                         )
                     )
                     val c = Color(raw)
-                    // Clamp brightness so background stays dark and cinematic
+                    // 提升亮度和饱和度限制，让背景颜色变化更明显、更有氛围感
                     rawBgColor = Color(
-                        red   = (c.red   * 0.45f).coerceIn(0f, 0.30f),
-                        green = (c.green * 0.45f).coerceIn(0f, 0.30f),
-                        blue  = (c.blue  * 0.45f).coerceIn(0f, 0.30f)
+                        red   = (c.red   * 0.65f).coerceIn(0f, 0.60f),
+                        green = (c.green * 0.65f).coerceIn(0f, 0.60f),
+                        blue  = (c.blue  * 0.65f).coerceIn(0f, 0.60f)
                     )
                 }
             } catch (_: Exception) { rawBgColor = Color(0xFF0A0A0A) }
@@ -174,7 +176,7 @@ fun CarouselScreen(
     val parsedLyrics = remember(currentTrack?.lyrics) { LyricsParser.parse(currentTrack?.lyrics) }
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
     val currentLyricIndex = if (isSynced) {
-        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition + 300L)
         if (idx < 0) 0 else idx
     } else -1
     val currentLyricText = when {
@@ -183,22 +185,24 @@ fun CarouselScreen(
         else -> null
     }
 
-    // Snap to nearest frame, with fling: if velocity is large, skip multiple frames
+    // Snap to nearest frame with fling support.
+    // onTrackClick is called BEFORE animateTo so it is never lost if animation is interrupted.
     fun snapToNearest(velocityX: Float = 0f) {
         coroutineScope.launch {
             if (tracks.isEmpty()) return@launch
-            // Estimate how many frames the fling momentum should carry
             val flingFrames = (velocityX / stridePx * 0.28f).toInt().coerceIn(-8, 8)
             val idx = ((-scrollOffset.value) / stridePx).roundToInt() - flingFrames
+            val n = tracks.size
+            val realIdx = ((idx % n) + n) % n
+            // Trigger playback immediately — don’t wait for the animation to finish
+            tracks.getOrNull(realIdx)?.let { track ->
+                if (track.id != currentTrack?.id) onTrackClick(track)
+            }
+            // Animate the filmstrip to the snapped position
             scrollOffset.animateTo(
                 targetValue = -idx * stridePx,
                 animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f)
             )
-            val n = tracks.size
-            val realIdx = ((idx % n) + n) % n
-            tracks.getOrNull(realIdx)?.let { track ->
-                if (track.id != currentTrack?.id) onTrackClick(track)
-            }
         }
     }
 
@@ -252,12 +256,16 @@ fun CarouselScreen(
             val holeRadiusDp = 5.dp
             val holeSpacingDp = 22.dp
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 开启离屏渲染，使 BlendMode.Clear 能够真正“挖空”胶片边缘，透出底部炫彩背景
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            ) {
                 val stripH = stripHeightDp.toPx()
                 val holeR = holeRadiusDp.toPx()
                 val holeSpacing = holeSpacingDp.toPx()
-                val filmEdgeColor = Color(0xFF0D0D0D)
-                val holeBgColor = Color(0xFF1A1A1A)
+                val filmEdgeColor = Color(0xFF0D0D0D) // 胶片黑色边缘
                 val holeRimColor = Color(0xFF333333)
 
                 // Top strip background
@@ -272,12 +280,14 @@ fun CarouselScreen(
                     val cx = x
                     val topCy = stripH / 2f
                     val botCy = size.height - stripH / 2f
-                    // Hole fill
-                    drawCircle(holeBgColor, radius = holeR, center = Offset(cx, topCy))
-                    drawCircle(holeBgColor, radius = holeR, center = Offset(cx, botCy))
-                    // Hole rim
-                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, topCy), style = Stroke(width = 1.2f))
-                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, botCy), style = Stroke(width = 1.2f))
+                    
+                    // Hole fill: 挖空胶片，透出后面的炫彩渐变背景！
+                    drawCircle(Color.Black, radius = holeR, center = Offset(cx, topCy), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+                    drawCircle(Color.Black, radius = holeR, center = Offset(cx, botCy), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+                    
+                    // Hole rim: 稍微画一点灰色的描边增加立体感
+                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, topCy), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f))
+                    drawCircle(holeRimColor, radius = holeR, center = Offset(cx, botCy), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f))
                     x += holeSpacing
                 }
 

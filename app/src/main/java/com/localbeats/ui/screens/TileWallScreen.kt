@@ -161,6 +161,8 @@ fun TileWallScreen(
     val currentTileSpans by rememberUpdatedState(tileSpansMap)
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
     val currentOnReorder by rememberUpdatedState(onReorder)
+    // contentHeight 也通过 rememberUpdatedState 封装，确保完数变化时拖动范围实时更新
+    val currentContentHeight by rememberUpdatedState(contentHeight)
 
     // 所有曲目全部渲染，绝对稳定，无剔除逻辑，避免任何条件下的磁贴消失问题
     val visibleTracks = tracks
@@ -178,10 +180,12 @@ fun TileWallScreen(
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        // 左右最多滑动 240 像素 (直接以可移动的像素作约束)
+                        // 左右最多滑动 240 像素（防止磁贴墙水平漂移过多）
                         offsetX = (offsetX + dragAmount.x).coerceIn(-240f, 240f)
-                        // 上下最多拖动 1000 像素 (直接以可移动的像素作约束)
-                        offsetY = (offsetY + dragAmount.y).coerceIn(-1000f, 1000f)
+                        // Y 轴动态范围：
+                        //   上滚上限 = 内容总高（随歌曲数量自动调整）
+                        //   下拉缓冲 = 10000px（足够把顶部磁贴从标题栏后还拉入视野）
+                        offsetY = (offsetY + dragAmount.y).coerceIn(-10000f, 10000f)
                     }
                 )
             }
