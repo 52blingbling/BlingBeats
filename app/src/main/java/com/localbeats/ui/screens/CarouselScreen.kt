@@ -201,7 +201,7 @@ fun CarouselScreen(
     val parsedLyrics = remember(currentTrack?.lyrics) { LyricsParser.parse(currentTrack?.lyrics) }
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
     val currentLyricIndex = if (isSynced) {
-        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition + 300L)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPositionProvider() + 300L)
         if (idx < 0) 0 else idx
     } else -1
     val currentLyricText = when {
