@@ -298,7 +298,7 @@ fun TileWallScreen(
                                             currentOnTrackClick(original)
                                         },
                                         onLongClick = {
-                                            localHaptic.performHapticFeedback(androidx.compose.ui.haptic.HapticFeedbackType.LongPress)
+                                            localHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                         }
                                     )
                             ) {
