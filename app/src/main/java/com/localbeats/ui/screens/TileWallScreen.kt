@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -543,6 +544,31 @@ fun TileWallScreen(
                     icon = modeIcon,
                     onClick = {
                         onThemeModeChange((currentThemeMode + 1) % 3)
+                    }
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                GlassMenuItem(
+                    text = "作者：小彬Papago",
+                    icon = Icons.Filled.Info,
+                    onClick = {
+                        val easterEggs = listOf(
+                            "🎉 你戳了戳作者【小彬Papago】！",
+                            "🦜 Papago 说：BlingBeats 的每一个像素都是用心打磨的哦！",
+                            "🚀 叮！解锁隐藏成就：【忠实听众】",
+                            "🎵 听说多听本地音乐可以增加你的日常欧气！",
+                            "💡 小彬正在闭关开发更多酷炫功能，敬请期待！",
+                            "🌟 给小彬投喂一块曲奇，BlingBeats 播放速度+0.01%！",
+                            "✨ 你发现了本App里最帅的彩蛋——就是屏幕前的你！"
+                        )
+                        val eggMessage = easterEggs[java.util.Random().nextInt(easterEggs.size)]
+                        android.widget.Toast.makeText(context, eggMessage, android.widget.Toast.LENGTH_SHORT).show()
                     }
                 )
             }
