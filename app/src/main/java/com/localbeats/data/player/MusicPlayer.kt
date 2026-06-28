@@ -30,8 +30,26 @@ class MusicPlayer(context: Context) {
         .setHandleAudioBecomingNoisy(true)
         .build()
 
-    // 绑定系统 MediaSession，让通知栏、锁屏、蓝牙耳机都能控制播放器
-    private val mediaSession = MediaSession.Builder(context, exoPlayer).build()
+    // 绑定系统 MediaSession，让通知栏、锁屏、蓝牙耳机都能控制播放器。加 try-catch 防止部分定制系统（如 HyperOS）因权限或 Intent 解析闪退
+    private val mediaSession: MediaSession? = try {
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val pendingIntent = launchIntent?.let {
+            android.app.PendingIntent.getActivity(
+                context,
+                0,
+                it,
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+        val builder = MediaSession.Builder(context, exoPlayer)
+        if (pendingIntent != null) {
+            builder.setSessionActivity(pendingIntent)
+        }
+        builder.build()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
 
     private val _currentTrack = MutableStateFlow<MusicTrack?>(null)
     val currentTrack: StateFlow<MusicTrack?> = _currentTrack.asStateFlow()
@@ -185,7 +203,7 @@ class MusicPlayer(context: Context) {
 
     fun release() {
         exoPlayer.removeListener(listener)
-        mediaSession.release()
+        mediaSession?.release()
         exoPlayer.release()
     }
 }
