@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -133,7 +134,9 @@ fun TileWallScreen(
     var shuffleEnabled by remember { mutableStateOf(prefs.getBoolean("shuffle_mode", true)) }
     var menuExpanded by remember { mutableStateOf(false) }
 
-    var randomSeed by remember { mutableIntStateOf(0) }
+    var randomSeed by remember {
+        mutableIntStateOf(prefs.getInt("random_seed", 0))
+    }
 
     var containerWidth by remember { mutableIntStateOf(0) }
 
@@ -383,6 +386,16 @@ fun TileWallScreen(
                     text = "重新扫描",
                     icon = Icons.Filled.Refresh,
                     onClick = { menuExpanded = false; onRescan() }
+                )
+                GlassMenuItem(
+                    text = "随机排列",
+                    icon = Icons.Filled.Casino,
+                    onClick = {
+                        menuExpanded = false
+                        val nextSeed = java.util.Random().nextInt(100000) + 1
+                        randomSeed = nextSeed
+                        prefs.edit().putInt("random_seed", nextSeed).apply()
+                    }
                 )
                 GlassMenuItem(
                     text = "随机播放",

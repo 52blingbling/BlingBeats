@@ -115,7 +115,12 @@ fun CarouselScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
 
-    // 播放状态下，3.5 秒无操作自动隐藏控制按钮和标题
+    // 只要切换歌曲（包含第一次进入横屏），都重新唤醒控制栏显示
+    LaunchedEffect(currentTrack?.id) {
+        controlsVisible = true
+    }
+
+    // 播放状态下，3.5 秒无操作自动隐藏控制按钮
     LaunchedEffect(controlsVisible, isPlaying) {
         if (controlsVisible && isPlaying) {
             kotlinx.coroutines.delay(3500)
@@ -367,49 +372,39 @@ fun CarouselScreen(
             }
 
             // ── Song title (top, near screen edge) ────────────────────────────
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
-                            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
                         )
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        // top padding bumped to 24dp so title clears the sprocket hole strip
-                        .padding(top = 24.dp, bottom = 6.dp)
-                ) {
-                    Text(
-                        text = currentTrack?.title ?: "",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(horizontal = 32.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
-                }
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    // top padding bumped to 24dp so title clears the sprocket hole strip
+                    .padding(top = 24.dp, bottom = 6.dp)
+            ) {
+                Text(
+                    text = currentTrack?.title ?: "",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 32.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             // ── Synced lyrics (bottom, near screen edge) ──────────────────────
-            AnimatedVisibility(
-                visible = controlsVisible && currentLyricText != null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                val lyricText = currentLyricText ?: ""
+            val lyricText = currentLyricText
+            if (lyricText != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
