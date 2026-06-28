@@ -54,7 +54,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val crashHandler = CoroutineExceptionHandler { _, _ -> }
 
-    fun loadMusicFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean) {
+    fun loadMusicFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean, forceReload: Boolean = false) {
         // 在主线程同步设置崩溃标记，确保在任何崩溃前写入
         prefs.edit().putBoolean("loading_crashed", true).commit()
 
@@ -71,7 +71,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // ExoPlayer 必须在主线程操作
                 withContext(Dispatchers.Main) {
                     try {
-                        player.setPlaylist(musicTracks)
+                        player.setPlaylist(musicTracks, forceReload)
                     } catch (_: Throwable) {
                         // ExoPlayer 设置播放列表失败时忽略
                     }
@@ -93,7 +93,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun rescanDevice() {
         val ignoredFolders = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
         val filterShortAudio = prefs.getBoolean("filter_short_audio", true)
-        loadMusicFromDevice(ignoredFolders, filterShortAudio)
+        loadMusicFromDevice(ignoredFolders, filterShortAudio, forceReload = true)
     }
 
     fun getAudioFolders(): List<String> {

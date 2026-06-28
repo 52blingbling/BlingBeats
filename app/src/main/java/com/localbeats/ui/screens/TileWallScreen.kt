@@ -26,14 +26,16 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.BrightnessAuto
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.Text
@@ -44,7 +46,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -53,31 +54,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.layoutId
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.localbeats.data.model.MusicTrack
-import com.localbeats.ui.components.PlayerBar
-import com.localbeats.ui.components.placeholderPalettes
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * Windows 8/10 开始菜单风格的方形磁贴墙：
@@ -120,14 +110,13 @@ fun TileWallScreen(
     // 竖屏封面歌曲标题显示开关（持久化到 SharedPreferences）
     val prefs = remember { context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE) }
     var showTitle by remember {
-        mutableStateOf(prefs.getBoolean("show_tile_title", true))
+        mutableStateOf(prefs.getBoolean("show_tile_title", false))
     }
     var menuExpanded by remember { mutableStateOf(false) }
 
     var randomSeed by remember { mutableIntStateOf(0) }
 
     var containerWidth by remember { mutableIntStateOf(0) }
-    var containerHeight by remember { mutableIntStateOf(0) }
 
     // 列数：视口实际测量宽度决定，+1 列保证略宽于视口（可横向平移一点），如果还没测量好，默认5列
     val columns = if (containerWidth > 0) max(3, (containerWidth / cellPx).toInt()) + 1 else 5
@@ -142,19 +131,12 @@ fun TileWallScreen(
         packTiles(shuffledTracks, tileSpansMap, columns)
     }
 
-    // 内容总尺寸（由 tilePositions 派生，跟随交换实时更新）
-    val contentWidth = columns * cellPx
-    val contentHeight = (tilePositions.maxOfOrNull { (id, pos) ->
-        pos.second + (tileSpansMap[id]?.second ?: 1)
-    } ?: 0) * cellPx
-
     // 平移偏移（整个磁贴墙相对视口的位移）
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
-    var bottomInsetPx by remember { mutableFloatStateOf(0f) }
     var offsetInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(topInsetPx) {
         if (!offsetInitialized && topInsetPx > 0f) {
@@ -163,13 +145,7 @@ fun TileWallScreen(
         }
     }
 
-    // pointerInput(Unit) 的 lambda 只创建一次，用 rememberUpdatedState 始终读取最新值
-    val currentTracks by rememberUpdatedState(tracks)
-    val currentTileSpans by rememberUpdatedState(tileSpansMap)
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
-    val currentOnReorder by rememberUpdatedState(onReorder)
-    // contentHeight 也通过 rememberUpdatedState 封装，确保完数变化时拖动范围实时更新
-    val currentContentHeight by rememberUpdatedState(contentHeight)
 
     // 所有曲目全部渲染，绝对稳定，无剔除逻辑，避免任何条件下的磁贴消失问题
     val visibleTracks = tracks
@@ -181,7 +157,6 @@ fun TileWallScreen(
             .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
             .onGloballyPositioned { coords ->
                 containerWidth = coords.size.width
-                containerHeight = coords.size.height
             }
             .pointerInput(Unit) {
                 detectDragGestures(
@@ -197,7 +172,7 @@ fun TileWallScreen(
                 )
             }
     ) {
-        Layout(
+        androidx.compose.ui.layout.Layout(
             content = {
                 visibleTracks.forEach { track ->
                     key(track.id) {
@@ -316,97 +291,122 @@ fun TileWallScreen(
                                 tint = androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                             )
                         }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("导入文件夹") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onImportClick()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.FolderOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("重新扫描") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onRescan()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("随机排列") },
-                                onClick = {
-                                    menuExpanded = false
-                                    randomSeed++
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("显示歌曲标题") },
-                                onClick = {
-                                    showTitle = !showTitle
-                                    prefs.edit().putBoolean("show_tile_title", showTitle).apply()
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = showTitle,
-                                        onCheckedChange = {
-                                            showTitle = it
-                                            prefs.edit().putBoolean("show_tile_title", it).apply()
-                                        }
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    val modeName = when (currentThemeMode) {
-                                        0 -> "跟随系统"
-                                        1 -> "浅色模式"
-                                        else -> "深色模式"
-                                    }
-                                    Text("主题模式: $modeName")
-                                },
-                                onClick = {
-                                    // 循环切换：跟随系统(0) -> 浅色(1) -> 深色(2) -> 跟随系统(0)...
-                                    onThemeModeChange((currentThemeMode + 1) % 3)
-                                },
-                                leadingIcon = {
-                                    val icon = when (currentThemeMode) {
-                                        0 -> Icons.Filled.BrightnessAuto
-                                        1 -> Icons.Filled.LightMode
-                                        else -> Icons.Filled.DarkMode
-                                    }
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            )
-                        }
+
                     }
                 }
+            }
+        }
+
+        // Invisible overlay to dismiss menu when clicking outside
+        if (menuExpanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = { menuExpanded = false }
+                    )
+            )
+        }
+
+        // Liquid Glass Menu Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = menuExpanded,
+            enter = androidx.compose.animation.scaleIn(
+                initialScale = 0.8f,
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f),
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f)
+            ) + fadeIn(tween(200)),
+            exit = androidx.compose.animation.scaleOut(
+                targetScale = 0.8f,
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f),
+                animationSpec = tween(150)
+            ) + fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 56.dp, end = 16.dp)
+        ) {
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val actualDark = currentThemeMode == 2 || (currentThemeMode == 0 && isDark)
+            
+            val glassBg = if (actualDark) androidx.compose.ui.graphics.Color(0xD91E1E1E) else androidx.compose.ui.graphics.Color(0xE6FFFFFF)
+            val glassBorder1 = androidx.compose.ui.graphics.Color.White.copy(alpha = if (actualDark) 0.15f else 0.8f)
+            val glassBorder2 = androidx.compose.ui.graphics.Color.White.copy(alpha = if (actualDark) 0.02f else 0.2f)
+
+            Column(
+                modifier = Modifier
+                    .width(200.dp)
+                    .androidx.compose.ui.draw.shadow(24.dp, RoundedCornerShape(20.dp), spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(glassBg, glassBg.copy(alpha = glassBg.alpha * 0.9f))
+                        )
+                    )
+                    .border(
+                        1.dp,
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(glassBorder1, glassBorder2)
+                        ),
+                        RoundedCornerShape(20.dp)
+                    )
+                    .padding(8.dp)
+            ) {
+                GlassMenuItem(
+                    text = "导入文件夹",
+                    icon = Icons.Filled.FolderOpen,
+                    onClick = { menuExpanded = false; onImportClick() }
+                )
+                GlassMenuItem(
+                    text = "重新扫描",
+                    icon = Icons.Filled.Refresh,
+                    onClick = { menuExpanded = false; onRescan() }
+                )
+                GlassMenuItem(
+                    text = "随机排列",
+                    icon = Icons.Filled.Refresh,
+                    onClick = { menuExpanded = false; randomSeed++ }
+                )
+                GlassMenuItem(
+                    text = "显示标题",
+                    icon = Icons.Filled.MusicNote,
+                    onClick = {
+                        showTitle = !showTitle
+                        prefs.edit().putBoolean("show_tile_title", showTitle).apply()
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = showTitle,
+                            onCheckedChange = null,
+                            modifier = Modifier.androidx.compose.ui.draw.scale(0.7f),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
+                                uncheckedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+                                uncheckedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                    }
+                )
+                val modeName = when (currentThemeMode) {
+                    0 -> "跟随系统"
+                    1 -> "浅色模式"
+                    else -> "深色模式"
+                }
+                val modeIcon = when (currentThemeMode) {
+                    0 -> Icons.Filled.BrightnessAuto
+                    1 -> Icons.Filled.LightMode
+                    else -> Icons.Filled.DarkMode
+                }
+                GlassMenuItem(
+                    text = modeName,
+                    icon = modeIcon,
+                    onClick = {
+                        onThemeModeChange((currentThemeMode + 1) % 3)
+                    }
+                )
             }
         }
 

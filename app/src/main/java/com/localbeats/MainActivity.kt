@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            var themeMode by remember { mutableStateOf(prefs.getInt("theme_mode", 2)) }
+            var themeMode by remember { mutableStateOf(prefs.getInt("theme_mode", 0)) }
 
             LocalBeatsTheme(themeMode = themeMode) {
                 val viewModel: MusicViewModel = viewModel()
@@ -130,6 +131,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     WelcomeScreen(onScanMusic = ::requestStoragePermission)
                 }
+                BackHandler(enabled = showFolderSelection && hasCompletedSetup) {
+                    showFolderSelection = false
+                }
+                
                 AnimatedVisibility(
                     visible = showFolderSelection,
                     enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -141,7 +146,10 @@ class MainActivity : ComponentActivity() {
                             saveIgnoredFolders(ignored, filterShort)
                             hasCompletedSetup = true
                             showFolderSelection = false
-                        }
+                            // 点击完成必须重新扫描
+                            viewModel.loadMusicFromDevice(ignored, filterShort, forceReload = true)
+                        },
+                        onBack = if (hasCompletedSetup) { { showFolderSelection = false } } else null
                     )
                 }
                 AnimatedVisibility(
@@ -519,7 +527,8 @@ fun WelcomeScreen(onScanMusic: () -> Unit) {
 @Composable
 fun FolderSelectionScreen(
     viewModel: MusicViewModel,
-    onConfirm: (Set<String>, Boolean) -> Unit
+    onConfirm: (Set<String>, Boolean) -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var folders by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -541,6 +550,17 @@ fun FolderSelectionScreen(
         topBar = {
             TopAppBar(
                 title = { Text("设置与扫描文件夹", color = MaterialTheme.colorScheme.onBackground) },
+                navigationIcon = {
+                    if (onBack != null) {
+                        androidx.compose.material3.IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
+                                contentDescription = "返回",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )

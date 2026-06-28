@@ -63,11 +63,9 @@ class MusicPlayer(context: Context) {
                     }
                 }
                 Player.STATE_ENDED -> {
-                    consecutiveErrorCount = 0
-                    playNext()
+                    _isPlaying.value = false
                 }
-                Player.STATE_BUFFERING -> {}
-                Player.STATE_IDLE -> {}
+                else -> {}
             }
         }
 
@@ -75,11 +73,21 @@ class MusicPlayer(context: Context) {
             _isPlaying.value = isPlaying
         }
 
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            super.onMediaItemTransition(mediaItem, reason)
+            val trackId = mediaItem?.mediaId?.toLongOrNull()
+            if (trackId != null) {
+                _currentTrack.value = _playlist.value.find { it.id == trackId }
+            } else {
+                _currentTrack.value = null
+            }
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             consecutiveErrorCount++
             if (consecutiveErrorCount <= maxConsecutiveErrors) {
                 // 出错时跳过当前曲目
-                playNext()
+                player?.seekToNext()
             } else {
                 // 连续错误次数过多，停止播放，避免无限循环
                 consecutiveErrorCount = 0
@@ -101,55 +109,65 @@ class MusicPlayer(context: Context) {
         }, ContextCompat.getMainExecutor(context))
     }
 
-    fun setPlaylist(tracks: List<MusicTrack>) {
+    fun setPlaylist(tracks: List<MusicTrack>, forceReload: Boolean = false) {
+        _playlist.value = tracks
+        shouldAutoPlay = false
+        consecutiveErrorCount = 0
+
         executeOrQueue {
+            if (!forceReload && (player?.mediaItemCount ?: 0) > 0) {
+                // 后台可能正在播放，不要打断，仅同步 UI 的当前曲目状态
+                val currentMediaId = player?.currentMediaItem?.mediaId?.toLongOrNull()
+                if (currentMediaId != null) {
+                    _currentTrack.value = tracks.find { it.id == currentMediaId }
+                } else if (tracks.isNotEmpty()) {
+                    _currentTrack.value = tracks[0]
+                }
+                return@executeOrQueue
+            }
+
             // 重置播放列表时先停止当前播放
             player?.stop()
             player?.clearMediaItems()
-        }
-        _playlist.value = tracks
-        currentIndex = -1
-        shouldAutoPlay = false
-        consecutiveErrorCount = 0
-        if (tracks.isNotEmpty()) {
-            currentIndex = 0
-            prepareTrack(tracks[0])
-        } else {
-            _currentTrack.value = null
-            _isPlaying.value = false
-        }
-    }
-
-    private fun prepareTrack(track: MusicTrack) {
-        executeOrQueue {
-            val mediaMetadata = MediaMetadata.Builder()
-                .setTitle(track.title)
-                .setArtist(track.artist)
-                .setArtworkUri(track.coverUri)
-                .build()
-
-            val mediaItem = MediaItem.Builder()
-                .setUri(track.uri)
-                .setMediaId(track.id.toString())
-                .setMediaMetadata(mediaMetadata)
-                .build()
-                
-            player?.setMediaItem(mediaItem)
+            val mediaItems = tracks.map { track ->
+                val mediaMetadata = MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setArtworkUri(track.coverUri)
+                    .build()
+                MediaItem.Builder()
+                    .setUri(track.uri)
+                    .setMediaId(track.id.toString())
+                    .setMediaMetadata(mediaMetadata)
+                    .build()
+            }
+            player?.setMediaItems(mediaItems)
+            player?.repeatMode = Player.REPEAT_MODE_ALL
             player?.prepare()
+            
+            if (tracks.isNotEmpty()) {
+                _currentTrack.value = tracks[0]
+            } else {
+                _currentTrack.value = null
+                _isPlaying.value = false
+            }
         }
-        _currentTrack.value = track
     }
 
     fun play(track: MusicTrack) {
         val tracks = _playlist.value
-        val idx = tracks.indexOf(track)
-        currentIndex = if (idx >= 0) idx else {
-            _playlist.value = listOf(track)
-            0
+        var idx = tracks.indexOf(track)
+        if (idx < 0) {
+            setPlaylist(listOf(track), forceReload = true)
+            idx = 0
         }
         shouldAutoPlay = true
         consecutiveErrorCount = 0
-        prepareTrack(track)
+        executeOrQueue {
+            player?.seekTo(idx, 0L)
+            player?.play()
+        }
+        _currentTrack.value = track
     }
 
     fun togglePlayPause() {
@@ -164,19 +182,17 @@ class MusicPlayer(context: Context) {
     }
 
     fun playNext() {
-        val tracks = _playlist.value
-        if (tracks.isEmpty()) return
-        currentIndex = (currentIndex + 1) % tracks.size
         shouldAutoPlay = true
-        prepareTrack(tracks[currentIndex])
+        executeOrQueue {
+            player?.seekToNext()
+        }
     }
 
     fun playPrevious() {
-        val tracks = _playlist.value
-        if (tracks.isEmpty()) return
-        currentIndex = if (currentIndex > 0) currentIndex - 1 else tracks.size - 1
         shouldAutoPlay = true
-        prepareTrack(tracks[currentIndex])
+        executeOrQueue {
+            player?.seekToPrevious()
+        }
     }
 
     fun seekTo(position: Long) {
