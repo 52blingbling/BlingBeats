@@ -60,14 +60,27 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.localbeats.ui.components.PlayerBar
+import com.localbeats.ui.components.placeholderPalettes
 import com.localbeats.data.model.MusicTrack
 import kotlin.math.max
+import kotlin.math.roundToInt
+
 
 /**
  * Windows 8/10 开始菜单风格的方形磁贴墙：
@@ -602,6 +615,40 @@ private fun TileContent(
                     )
                 }
             }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+fun GlassMenuItem(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    trailingContent: @androidx.compose.runtime.Composable (() -> Unit)? = null
+) {
+    androidx.compose.foundation.layout.Row(
+        modifier = androidx.compose.ui.Modifier
+            .androidx.compose.foundation.layout.fillMaxWidth()
+            .androidx.compose.ui.draw.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .androidx.compose.foundation.clickable(onClick = onClick)
+            .androidx.compose.foundation.layout.padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = androidx.compose.ui.Modifier.androidx.compose.foundation.layout.size(20.dp),
+            tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+        )
+        androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.androidx.compose.foundation.layout.width(12.dp))
+        androidx.compose.material3.Text(
+            text = text,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+            modifier = androidx.compose.ui.Modifier.weight(1f)
+        )
+        if (trailingContent != null) {
+            trailingContent()
         }
     }
 }
