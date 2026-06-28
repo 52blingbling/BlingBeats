@@ -34,20 +34,43 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _duration = MutableStateFlow(0L)
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
+    private var isAppInForeground = true
+
+    fun setAppInForeground(inForeground: Boolean) {
+        isAppInForeground = inForeground
+        if (inForeground) {
+            // 返回前台时立即主动获取一次最新进度，保证界面刷新没有时间延迟
+            viewModelScope.launch {
+                updatePlaybackProgress()
+            }
+        }
+    }
+
+    private fun updatePlaybackProgress() {
+        if (_tracks.value.isNotEmpty()) {
+            try {
+                val pos = player.getCurrentPosition()
+                val dur = player.getDuration().coerceAtLeast(0L)
+                _currentPosition.value = pos
+                _duration.value = dur
+            } catch (_: Exception) {
+                // ExoPlayer 可能处于异常状态，忽略
+            }
+        }
+    }
+
     init {
-        // 每 16ms（约1帧）轮询播放进度，高频刷新保证歌词同步极其精准（无延迟感）
+        // 动态频率轮询播放进度：前台播放 100ms（极省 CPU 且兼顾高精度），后台播放 1000ms，暂停状态 2000ms
         viewModelScope.launch {
             while (true) {
-                delay(16)
-                // 仅在有当前曲目时才访问 ExoPlayer，避免不必要的访问
-                if (_tracks.value.isNotEmpty()) {
-                    try {
-                        _currentPosition.value = player.getCurrentPosition()
-                        _duration.value = player.getDuration().coerceAtLeast(0L)
-                    } catch (_: Exception) {
-                        // ExoPlayer 可能处于异常状态，忽略
-                    }
+                val isPlaying = try { player.isPlaying.value } catch (_: Exception) { false }
+                val delayTime = when {
+                    isAppInForeground && isPlaying -> 100L
+                    isPlaying -> 1000L
+                    else -> 2000L
                 }
+                delay(delayTime)
+                updatePlaybackProgress()
             }
         }
     }

@@ -127,6 +127,26 @@ class MainActivity : ComponentActivity() {
 
             LocalBeatsTheme(themeMode = themeMode) {
                 val viewModel: MusicViewModel = viewModel()
+
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                androidx.compose.runtime.DisposableEffect(lifecycleOwner, viewModel) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        when (event) {
+                            androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                                viewModel.setAppInForeground(true)
+                            }
+                            androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                                viewModel.setAppInForeground(false)
+                            }
+                            else -> {}
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
                 AnimatedVisibility(
                     visible = !hasCompletedSetup && !showFolderSelection,
                     enter = fadeIn(),
