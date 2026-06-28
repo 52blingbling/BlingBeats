@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -128,7 +129,6 @@ fun TileWallScreen(
 ) {
     val density = LocalDensity.current
     val context = LocalContext.current
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     // 基础单元尺寸：每格 110dp
     val cellPx = with(density) { 110.dp.toPx() }
 
@@ -242,6 +242,7 @@ fun TileWallScreen(
                             val span = tileSpansMap[track.id] ?: (1 to 1)
                             val interactionSource = remember { MutableInteractionSource() }
                             val isPressed by interactionSource.collectIsPressedAsState()
+                            val localHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
                             val scaleAnimatable = remember { androidx.compose.animation.core.Animatable(1f) }
                             LaunchedEffect(isPressed) {
                                 if (isPressed) {
@@ -297,7 +298,7 @@ fun TileWallScreen(
                                             currentOnTrackClick(original)
                                         },
                                         onLongClick = {
-                                            haptic.performHapticFeedback(androidx.compose.ui.haptic.HapticFeedbackType.LongPress)
+                                            localHaptic.performHapticFeedback(androidx.compose.ui.haptic.HapticFeedbackType.LongPress)
                                         }
                                     )
                             ) {
