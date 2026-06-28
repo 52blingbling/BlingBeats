@@ -143,14 +143,37 @@ fun TileWallScreen(
     // 列数：视口实际测量宽度决定，+1 列保证略宽于视口（可横向平移一点），如果还没测量好，默认5列
     val columns = if (containerWidth > 0) max(3, (containerWidth / cellPx).toInt()) + 1 else 5
 
+    // 复制曲目列表直到数量不少于 30，确保磁贴墙高度大于屏幕高度，使得 2x2 平铺无缝连接
+    val displayTracks = remember(tracks) {
+        if (tracks.isEmpty()) emptyList()
+        else {
+            val result = ArrayList<MusicTrack>()
+            var virtualId = 1000000L
+            while (result.size < 30) {
+                tracks.forEach { track ->
+                    result.add(track.copy(id = virtualId++))
+                }
+            }
+            result
+        }
+    }
+
     // 按 track.id 取模决定 span，每个磁贴尺寸稳定（重排不变）
-    val idSetKey = remember(tracks) { tracks.map { it.id }.toSet() }
-    val tileSpansMap = remember(idSetKey) { tracks.associate { it.id to computeSpan(it) } }
+    val displayIdSetKey = remember(displayTracks) { displayTracks.map { it.id }.toSet() }
+    val tileSpansMap = remember(displayIdSetKey) { displayTracks.associate { it.id to computeSpan(it) } }
 
     // 独立的 id→磁贴坐标（单元格 col,row）映射。
-    val tilePositions = remember(idSetKey, columns, randomSeed) {
-        val shuffledTracks = if (randomSeed == 0) tracks else tracks.shuffled(Random(randomSeed.toLong()))
+    val tilePositions = remember(displayIdSetKey, columns, randomSeed) {
+        val shuffledTracks = if (randomSeed == 0) displayTracks else displayTracks.shuffled(Random(randomSeed.toLong()))
         packTiles(shuffledTracks, tileSpansMap, columns)
+    }
+
+    val gridW = columns * cellPx
+    val gridH = remember(tilePositions, tileSpansMap) {
+        val maxRow = tilePositions.maxOfOrNull { (id, pos) ->
+            pos.second + (tileSpansMap[id]?.second ?: 1)
+        } ?: 0
+        maxRow * cellPx
     }
 
     // 平移偏移（整个磁贴墙相对视口的位移）
@@ -161,17 +184,16 @@ fun TileWallScreen(
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
     var offsetInitialized by remember { mutableStateOf(false) }
-    LaunchedEffect(topInsetPx) {
-        if (!offsetInitialized && topInsetPx > 0f) {
-            offsetY = topInsetPx
+    LaunchedEffect(topInsetPx, gridH) {
+        if (!offsetInitialized && topInsetPx > 0f && gridH > 0f) {
+            offsetY = topInsetPx - gridH
             offsetInitialized = true
         }
     }
 
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
 
-    // 所有曲目全部渲染，绝对稳定，无剔除逻辑，避免任何条件下的磁贴消失问题
-    val visibleTracks = tracks
+    val visibleTracks = displayTracks
 
     Box(
         modifier = modifier
@@ -181,91 +203,114 @@ fun TileWallScreen(
             .onGloballyPositioned { coords ->
                 containerWidth = coords.size.width
             }
-            .pointerInput(Unit) {
+            .pointerInput(gridW, gridH) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        // 左右最多滑动 240 像素（防止磁贴墙水平漂移过多）
-                        offsetX = (offsetX + dragAmount.x).coerceIn(-240f, 240f)
-                        // Y 轴动态范围：
-                        //   上滚上限 = 内容总高（随歌曲数量自动调整）
-                        //   下拉缓冲 = 10000px（足够把顶部磁贴从标题栏后还拉入视野）
-                        offsetY = (offsetY + dragAmount.y).coerceIn(-10000f, 10000f)
+                        val newX = offsetX + dragAmount.x
+                        val newY = offsetY + dragAmount.y
+                        
+                        // 将 X 轴偏移收敛于 (-gridW, 0] 区间
+                        offsetX = if (gridW > 0) {
+                            val remainder = newX % gridW
+                            if (remainder > 0) remainder - gridW else remainder
+                        } else 0f
+                        
+                        // 将 Y 轴偏移收敛于 (-gridH, 0] 区间
+                        offsetY = if (gridH > 0) {
+                            val remainder = newY % gridH
+                            if (remainder > 0) remainder - gridH else remainder
+                        } else 0f
                     }
                 )
             }
     ) {
         androidx.compose.ui.layout.Layout(
             content = {
-                visibleTracks.forEach { track ->
-                    key(track.id) {
-                        val span = tileSpansMap[track.id] ?: (1 to 1)
-                        val interactionSource = remember { MutableInteractionSource() }
-                        val isPressed by interactionSource.collectIsPressedAsState()
-                        val scale by animateFloatAsState(
-                            targetValue = if (isPressed) 0.92f else 1f,
-                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-                            label = "tileScale"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .layoutId(track.id)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                }
-                                .clip(RoundedCornerShape(0.dp))
-                                .clickable(
-                                    interactionSource = interactionSource,
-                                    indication = androidx.compose.foundation.LocalIndication.current
-                                ) {
-                                    currentOnTrackClick(track)
-                                }
-                        ) {
-                            TileContent(
-                                track = track,
-                                spanWidth = span.first,
-                                spanHeight = span.second,
-                                isPlaying = isPlaying && track.id == currentTrack?.id,
-                                showTitle = showTitle,
-                                cellPx = cellPx
+                // 渲染 4 份拷贝 (2x2) 以在无限滑动时无缝衔接
+                for (copyIndex in 0..3) {
+                    visibleTracks.forEach { track ->
+                        key("${track.id}_$copyIndex") {
+                            val span = tileSpansMap[track.id] ?: (1 to 1)
+                            val interactionSource = remember { MutableInteractionSource() }
+                            val isPressed by interactionSource.collectIsPressedAsState()
+                            val scale by animateFloatAsState(
+                                targetValue = if (isPressed) 0.92f else 1f,
+                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+                                label = "tileScale"
                             )
+                            Box(
+                                modifier = Modifier
+                                    .layoutId("${track.id}_$copyIndex")
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    }
+                                    .clip(RoundedCornerShape(0.dp))
+                                    .clickable(
+                                        interactionSource = interactionSource,
+                                        indication = androidx.compose.foundation.LocalIndication.current
+                                    ) {
+                                        // 点击时找到原始列表中的歌曲
+                                        val original = tracks.find { it.filePath == track.filePath } ?: track
+                                        currentOnTrackClick(original)
+                                    }
+                            ) {
+                                TileContent(
+                                    track = track,
+                                    spanWidth = span.first,
+                                    spanHeight = span.second,
+                                    isPlaying = isPlaying && track.filePath == currentTrack?.filePath,
+                                    showTitle = showTitle,
+                                    cellPx = cellPx
+                                )
+                            }
                         }
                     }
                 }
             },
-            measurePolicy = { measurables, _ ->
-                // 按 layoutId(track.id) 索引 measurables，保证节点身份与数据对齐
-                val byId = HashMap<Long, androidx.compose.ui.layout.Measurable>()
+            measurePolicy = { measurables, constraints ->
+                val byId = HashMap<String, androidx.compose.ui.layout.Measurable>()
                 measurables.forEach { m ->
-                    (m.layoutId as? Long)?.let { byId[it] = m }
+                    (m.layoutId as? String)?.let { byId[it] = m }
                 }
-                val placeables = visibleTracks.mapNotNull { track ->
-                    val m = byId[track.id] ?: return@mapNotNull null
-                    val span = tileSpansMap[track.id] ?: (1 to 1)
-                    val w = (span.first * cellPx).toInt()
-                    val h = (span.second * cellPx).toInt()
-                    track to m.measure(Constraints.fixed(w, h))
+
+                // 在 measurePass 中依次对所有 4 份拷贝进行测量
+                val placeables = (0..3).flatMap { copyIndex ->
+                    visibleTracks.mapNotNull { track ->
+                        val uniqueId = "${track.id}_$copyIndex"
+                        val m = byId[uniqueId] ?: return@mapNotNull null
+                        val span = tileSpansMap[track.id] ?: (1 to 1)
+                        val w = (span.first * cellPx).toInt()
+                        val h = (span.second * cellPx).toInt()
+                        val placeable = m.measure(Constraints.fixed(w, h))
+                        Triple(track, copyIndex, placeable)
+                    }
                 }
-                val totalWidth = (columns * cellPx).toInt()
-                val totalHeight = ((tilePositions.maxOfOrNull { (id, pos) ->
-                    pos.second + (tileSpansMap[id]?.second ?: 1)
-                } ?: 0) * cellPx).toInt()
-                layout(totalWidth, totalHeight) {
-                    placeables.forEach { (track, placeable) ->
+
+                val screenW = constraints.maxWidth
+                val screenH = constraints.maxHeight
+
+                layout(screenW, screenH) {
+                    placeables.forEach { (track, copyIndex, placeable) ->
+                        // 计算 2x2 平铺对应的像素增量
+                        val dx = when (copyIndex) {
+                            1, 3 -> gridW.toInt()
+                            else -> 0
+                        }
+                        val dy = when (copyIndex) {
+                            2, 3 -> gridH.toInt()
+                            else -> 0
+                        }
+
                         val pos = tilePositions[track.id] ?: (0 to 0)
-                        placeable.placeRelative(
-                            (pos.first * cellPx).toInt(),
-                            (pos.second * cellPx).toInt()
-                        )
+                        val drawX = (pos.first * cellPx).toInt() + dx + offsetX.toInt()
+                        val drawY = (pos.second * cellPx).toInt() + dy + offsetY.toInt()
+                        placeable.placeRelative(drawX, drawY)
                     }
                 }
             },
-            modifier = Modifier
-                .graphicsLayer {
-                    translationX = offsetX
-                    translationY = offsetY
-                }
+            modifier = Modifier.fillMaxSize()
         )
 
         // 顶部浮层标题栏
