@@ -2,7 +2,9 @@ package com.localbeats.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import kotlin.OptIn
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -100,6 +102,7 @@ import kotlin.math.roundToInt
  * - 维护独立的 id→坐标 映射 tilePositions，交换时只交换对应项，得到稳定的拖拽体验。
  * - 手势使用 Compose 提供的 detectTapGestures / detectDragGestures / detectDragGesturesAfterLongPress。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TileWallScreen(
     tracks: List<MusicTrack>,
@@ -123,6 +126,7 @@ fun TileWallScreen(
 ) {
     val density = LocalDensity.current
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     // 基础单元尺寸：每格 110dp
     val cellPx = with(density) { 110.dp.toPx() }
 
@@ -282,14 +286,18 @@ fun TileWallScreen(
                                         alpha = if (isVisible) 1f else 0f
                                     }
                                     .clip(RoundedCornerShape(0.dp))
-                                    .clickable(
+                                    .combinedClickable(
                                         interactionSource = interactionSource,
-                                        indication = androidx.compose.foundation.LocalIndication.current
-                                    ) {
-                                        // 点击时找到原始列表中的歌曲
-                                        val original = tracks.find { it.filePath == track.filePath } ?: track
-                                        currentOnTrackClick(original)
-                                    }
+                                        indication = androidx.compose.foundation.LocalIndication.current,
+                                        onClick = {
+                                            // 点击时找到原始列表中的歌曲
+                                            val original = tracks.find { it.filePath == track.filePath } ?: track
+                                            currentOnTrackClick(original)
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(androidx.compose.ui.platform.HapticFeedbackType.LongPress)
+                                        }
+                                    )
                             ) {
                                 TileContent(
                                     track = track,

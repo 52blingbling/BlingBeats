@@ -316,12 +316,12 @@ fun MusicApp(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF0D0D0D)),
+                    .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(
-                        color = Color(0xFFBB86FC),
+                        color = MaterialTheme.colorScheme.primary,
                         strokeWidth = 3.dp,
                         modifier = Modifier.size(48.dp)
                     )
@@ -335,7 +335,7 @@ fun MusicApp(
                     ) { msg ->
                         Text(
                             text = msg,
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                             fontSize = 14.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )
