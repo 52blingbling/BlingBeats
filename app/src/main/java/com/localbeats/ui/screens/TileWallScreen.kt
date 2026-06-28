@@ -236,17 +236,23 @@ fun TileWallScreen(
                             val span = tileSpansMap[track.id] ?: (1 to 1)
                             val interactionSource = remember { MutableInteractionSource() }
                             val isPressed by interactionSource.collectIsPressedAsState()
-                            val scale by animateFloatAsState(
-                                targetValue = if (isPressed) 0.92f else 1f,
-                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-                                label = "tileScale"
-                            )
+                            val scaleAnimatable = remember { androidx.compose.animation.core.Animatable(1f) }
+                            LaunchedEffect(isPressed) {
+                                if (isPressed) {
+                                    scaleAnimatable.animateTo(0.90f, spring(stiffness = 1000f))
+                                } else {
+                                    if (scaleAnimatable.value > 0.93f) {
+                                        scaleAnimatable.animateTo(0.90f, spring(stiffness = 1000f))
+                                    }
+                                    scaleAnimatable.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 500f))
+                                }
+                            }
                             Box(
                                 modifier = Modifier
                                     .layoutId("${track.id}_$copyIndex")
                                     .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
+                                        scaleX = scaleAnimatable.value
+                                        scaleY = scaleAnimatable.value
                                         
                                         // 方案 1：将滑动位移放到 GPU 绘制层，避免测量重排
                                         translationX = offsetX
