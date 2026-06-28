@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
             LocalBeatsTheme(themeMode = themeMode) {
                 val viewModel: MusicViewModel = viewModel()
 
-                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
                 androidx.compose.runtime.DisposableEffect(lifecycleOwner, viewModel) {
                     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         when (event) {
