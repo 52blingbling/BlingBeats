@@ -13,6 +13,7 @@ class MusicRepository(private val context: Context) {
 
     companion object {
         private const val TAG = "MusicRepository"
+        var cachedTracks: List<MusicTrack>? = null
     }
 
     fun scanAudioFolders(): List<String> {
@@ -37,7 +38,12 @@ class MusicRepository(private val context: Context) {
         return folders.toList().sorted()
     }
 
-    fun loadMusicTracksFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean): List<MusicTrack> {
+    fun loadMusicTracksFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean, forceReload: Boolean = false): List<MusicTrack> {
+        if (!forceReload && cachedTracks != null) {
+            Log.i(TAG, "从内存缓存中直接恢复了 ${cachedTracks!!.size} 首歌曲，跳过磁盘扫描")
+            return cachedTracks!!
+        }
+        
         val tracks = mutableListOf<MusicTrack>()
         val projection = arrayOf(
             android.provider.MediaStore.Audio.Media._ID,
@@ -90,6 +96,7 @@ class MusicRepository(private val context: Context) {
         } catch (_: Throwable) {}
 
         Log.i(TAG, "扫描完成：共 ${tracks.size} 首歌曲，其中 $lyricsFound 首提取到歌词")
+        cachedTracks = tracks
         return tracks
     }
 

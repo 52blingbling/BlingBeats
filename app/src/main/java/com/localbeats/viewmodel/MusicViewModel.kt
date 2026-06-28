@@ -54,7 +54,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val crashHandler = CoroutineExceptionHandler { _, _ -> }
 
+    var isInitialLoadDone = false
+        private set
+
     fun loadMusicFromDevice(ignoredFolders: Set<String>, filterShortAudio: Boolean, forceReload: Boolean = false) {
+        if (!forceReload && isInitialLoadDone) return
+        isInitialLoadDone = true
+
         // 在主线程同步设置崩溃标记，确保在任何崩溃前写入
         prefs.edit().putBoolean("loading_crashed", true).commit()
 
@@ -62,7 +68,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 _isLoading.value = true
                 val musicTracks = try {
-                    repository.loadMusicTracksFromDevice(ignoredFolders, filterShortAudio)
+                    repository.loadMusicTracksFromDevice(ignoredFolders, filterShortAudio, forceReload)
                 } catch (_: Throwable) {
                     // 捕获 Throwable 而非 Exception，包括 OutOfMemoryError 等
                     emptyList()
@@ -125,6 +131,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playPrevious() {
         player.playPrevious()
+    }
+
+    fun setShuffleModeEnabled(enabled: Boolean) {
+        player.setShuffleModeEnabled(enabled)
     }
 
     /**

@@ -2,6 +2,7 @@ package com.localbeats.ui.screens
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -18,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -111,6 +113,16 @@ fun CarouselScreen(
     var lastHapticIdx by remember { mutableIntStateOf(startIndex) }
     val velocityTracker = remember { VelocityTracker() }
 
+    var controlsVisible by remember { mutableStateOf(true) }
+
+    // 播放状态下，3.5 秒无操作自动隐藏控制按钮和标题
+    LaunchedEffect(controlsVisible, isPlaying) {
+        if (controlsVisible && isPlaying) {
+            kotlinx.coroutines.delay(3500)
+            controlsVisible = false
+        }
+    }
+
     // Sync when external track selection changes (e.g., PlayerBar prev/next).
     // Skip if a snap animation is already running to avoid fighting with snapToNearest.
     LaunchedEffect(currentTrack?.id, tracks) {
@@ -133,6 +145,14 @@ fun CarouselScreen(
         val targetV = currentV + shortestDiff
         val targetOffset = -targetV * stridePx
         if (abs(scrollOffset.value - targetOffset) > 2f) {
+            if (abs(shortestDiff) > 1) {
+                // 如果是跳跃切歌（如随机播放），为了避免过快的物理滚动导致硬切感，
+                // 我们在动画前，瞬间把坐标“瞬移”到目标的前一帧，然后再平滑滑动最后 1 帧。
+                // 这样看起来就像是人为轻轻划了一下，完美解决硬变问题。
+                val direction = if (shortestDiff > 0) 1 else -1
+                val fakeStartV = targetV - direction
+                scrollOffset.snapTo(-fakeStartV * stridePx)
+            }
             scrollOffset.animateTo(targetOffset, spring(dampingRatio = 0.8f, stiffness = 300f))
         }
     }
@@ -216,6 +236,16 @@ fun CarouselScreen(
                     center = Offset(screenWidthPx / 2f, with(density) { configuration.screenHeightDp.dp.toPx() } / 2f)
                 )
             )
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        controlsVisible = !controlsVisible
+                    },
+                    onDoubleTap = {
+                        onPlayPauseClick()
+                    }
+                )
+            }
             .pointerInput(stridePx, tracks.size) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
@@ -337,38 +367,48 @@ fun CarouselScreen(
             }
 
             // ── Song title (top, near screen edge) ────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
-                        )
-                    )
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    // top padding bumped to 24dp so title clears the sprocket hole strip
-                    .padding(top = 24.dp, bottom = 6.dp)
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
             ) {
-                Text(
-                    text = currentTrack?.title ?: "",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 32.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // ── Synced lyrics (bottom, near screen edge) ──────────────────────
-            if (currentLyricText != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                            )
+                        )
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        // top padding bumped to 24dp so title clears the sprocket hole strip
+                        .padding(top = 24.dp, bottom = 6.dp)
+                ) {
+                    Text(
+                        text = currentTrack?.title ?: "",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 32.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // ── Synced lyrics (bottom, near screen edge) ──────────────────────
+            AnimatedVisibility(
+                visible = controlsVisible && currentLyricText != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
@@ -401,25 +441,31 @@ fun CarouselScreen(
             }
 
             // ── Compact PlayerBar (bottom-left corner) ────────────────────────
-            PlayerBar(
-                title = currentTrack?.title ?: "未选择歌曲",
-                artist = currentTrack?.artist,
-                coverUri = currentTrack?.coverUri,
-                lyrics = currentTrack?.lyrics,
-                isPlaying = isPlaying,
-                onPlayPauseClick = onPlayPauseClick,
-                onPreviousClick = onPreviousClick,
-                onNextClick = onNextClick,
-                currentPosition = currentPosition,
-                duration = duration,
-                onSeek = onSeek,
-                compact = true,
-                onOrientationToggleClick = onOrientationToggleClick,
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(start = 12.dp, top = 28.dp)
-            )
+            ) {
+                PlayerBar(
+                    title = currentTrack?.title ?: "未选择歌曲",
+                    artist = currentTrack?.artist,
+                    coverUri = currentTrack?.coverUri,
+                    lyrics = currentTrack?.lyrics,
+                    isPlaying = isPlaying,
+                    onPlayPauseClick = onPlayPauseClick,
+                    onPreviousClick = onPreviousClick,
+                    onNextClick = onNextClick,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onSeek = onSeek,
+                    compact = true,
+                    onOrientationToggleClick = onOrientationToggleClick
+                )
+            }
         }
     }
 }

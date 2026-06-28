@@ -195,6 +195,12 @@ class MusicPlayer(context: Context) {
         }
     }
 
+    fun setShuffleModeEnabled(enabled: Boolean) {
+        executeOrQueue {
+            player?.shuffleModeEnabled = enabled
+        }
+    }
+
     fun seekTo(position: Long) {
         executeOrQueue {
             player?.seekTo(position)

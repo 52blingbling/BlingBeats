@@ -116,6 +116,7 @@ fun TileWallScreen(
     onOrientationToggleClick: (() -> Unit)? = null,
     currentThemeMode: Int = 1,
     onThemeModeChange: (Int) -> Unit = {},
+    onShuffleModeChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -128,6 +129,7 @@ fun TileWallScreen(
     var showTitle by remember {
         mutableStateOf(prefs.getBoolean("show_tile_title", false))
     }
+    var shuffleEnabled by remember { mutableStateOf(prefs.getBoolean("shuffle_mode", true)) }
     var menuExpanded by remember { mutableStateOf(false) }
 
     var randomSeed by remember { mutableIntStateOf(0) }
@@ -382,9 +384,26 @@ fun TileWallScreen(
                     onClick = { menuExpanded = false; onRescan() }
                 )
                 GlassMenuItem(
-                    text = "随机排列",
-                    icon = Icons.Filled.Refresh,
-                    onClick = { menuExpanded = false; randomSeed++ }
+                    text = "随机播放",
+                    icon = androidx.compose.material.icons.filled.Shuffle,
+                    onClick = {
+                        shuffleEnabled = !shuffleEnabled
+                        prefs.edit().putBoolean("shuffle_mode", shuffleEnabled).apply()
+                        onShuffleModeChange(shuffleEnabled)
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = shuffleEnabled,
+                            onCheckedChange = null,
+                            modifier = Modifier.scale(0.7f),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
+                                uncheckedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+                                uncheckedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                    }
                 )
                 GlassMenuItem(
                     text = "显示标题",

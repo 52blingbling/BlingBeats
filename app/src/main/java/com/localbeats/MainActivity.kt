@@ -260,11 +260,37 @@ fun MusicApp(
         val prefs = context.getSharedPreferences("localbeats_prefs", android.content.Context.MODE_PRIVATE)
         val ignored = prefs.getStringSet("ignored_folders", emptySet()) ?: emptySet()
         val filterShort = prefs.getBoolean("filter_short_audio", true)
+        val shuffle = prefs.getBoolean("shuffle_mode", true)
+        viewModel.setShuffleModeEnabled(shuffle)
         viewModel.loadMusicFromDevice(ignored, filterShort)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading) {
+            val loadingMessages = remember {
+                listOf(
+                    "正在启动量子音频矩阵...",
+                    "深度思考中...",
+                    "正在接通神经元引擎...",
+                    "正在解析多维和声规律...",
+                    "深度思考中...",
+                    "正在解除比特流纠缠...",
+                    "正在绕过系统底层限制...",
+                    "深度思考中...",
+                    "正在提取超高频特征码...",
+                    "正在给AI投喂音乐特征数据...",
+                    "深度思考中..."
+                )
+            }
+            var messageIndex by remember { mutableIntStateOf(0) }
+            
+            LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(800)
+                    messageIndex = (messageIndex + 1) % loadingMessages.size
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -278,11 +304,20 @@ fun MusicApp(
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "正在扫描音乐文件...",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp
-                    )
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = loadingMessages[messageIndex],
+                        transitionSpec = {
+                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300))
+                        },
+                        label = "ai_loading_text"
+                    ) { msg ->
+                        Text(
+                            text = msg,
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 14.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
                 }
             }
         } else if (tracks.isEmpty()) {
@@ -320,7 +355,8 @@ fun MusicApp(
                 onRescan = { viewModel.rescanDevice() },
                 onOrientationToggleClick = toggleOrientation,
                 currentThemeMode = currentThemeMode,
-                onThemeModeChange = onThemeModeChange
+                onThemeModeChange = onThemeModeChange,
+                onShuffleModeChange = { viewModel.setShuffleModeEnabled(it) }
             )
         }
     }

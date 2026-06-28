@@ -6,7 +6,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -162,7 +164,15 @@ fun PlayerBar(
             ) {
                 if (!compact) {
                     // 左侧：封面缩略图
-                    CoverThumbnail(coverUri = coverUri, size = thumbSize)
+                    AnimatedContent(
+                        targetState = coverUri,
+                        transitionSpec = {
+                            fadeIn(tween(300)).togetherWith(fadeOut(tween(300)))
+                        },
+                        label = "cover_change"
+                    ) { animatedCover ->
+                        CoverThumbnail(coverUri = animatedCover, size = thumbSize)
+                    }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
@@ -172,18 +182,27 @@ fun PlayerBar(
                         verticalArrangement = Arrangement.Center
                     ) {
                         val displayTitle = if (!artist.isNullOrBlank() && artist != "<unknown>") "$title - $artist" else title
-                        Text(
-                            text = displayTitle,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            // 标题超长时 marquee 滚动
-                            modifier = Modifier.basicMarquee(
-                                velocity = 40.dp,
-                                delayMillis = 800
+                        AnimatedContent(
+                            targetState = displayTitle,
+                            transitionSpec = {
+                                (slideInHorizontally { it / 2 } + fadeIn(tween(300)))
+                                    .togetherWith(slideOutHorizontally { -it / 2 } + fadeOut(tween(300)))
+                            },
+                            label = "title_change"
+                        ) { animatedTitle ->
+                            Text(
+                                text = animatedTitle,
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                // 标题超长时 marquee 滚动
+                                modifier = Modifier.basicMarquee(
+                                    velocity = 40.dp,
+                                    delayMillis = 800
+                                )
                             )
-                        )
+                        }
 
                         // 第二行：优先显示歌词；无歌词时回退到艺术家
                         if (currentLyricText != null) {
