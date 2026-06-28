@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
@@ -385,7 +386,7 @@ fun TileWallScreen(
                 )
                 GlassMenuItem(
                     text = "随机播放",
-                    icon = androidx.compose.material.icons.filled.Shuffle,
+                    icon = Icons.Filled.Shuffle,
                     onClick = {
                         shuffleEnabled = !shuffleEnabled
                         prefs.edit().putBoolean("shuffle_mode", shuffleEnabled).apply()

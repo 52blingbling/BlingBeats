@@ -406,6 +406,7 @@ fun CarouselScreen(
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
+                val lyricText = currentLyricText ?: ""
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -418,7 +419,7 @@ fun CarouselScreen(
                         .padding(horizontal = 24.dp)
                 ) {
                     AnimatedContent(
-                        targetState = currentLyricText,
+                        targetState = lyricText,
                         transitionSpec = {
                             (slideInVertically { it / 2 } + fadeIn(tween(200)))
                                 .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
