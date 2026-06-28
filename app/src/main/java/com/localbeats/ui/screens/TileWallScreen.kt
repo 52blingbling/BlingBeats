@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -59,6 +60,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -147,6 +151,7 @@ fun TileWallScreen(
     // 平移偏移（整个磁贴墙相对视口的位移）
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var bottomInsetPx by remember { mutableFloatStateOf(0f) }
 
     // 顶部标题栏高度（动态测量）：磁贴墙内容基线 = topInsetPx
     var topInsetPx by remember { mutableFloatStateOf(0f) }
@@ -351,7 +356,7 @@ fun TileWallScreen(
             Column(
                 modifier = Modifier
                     .width(200.dp)
-                    .androidx.compose.ui.draw.shadow(24.dp, RoundedCornerShape(20.dp), spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f))
+                    .shadow(24.dp, RoundedCornerShape(20.dp), spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f))
                     .clip(RoundedCornerShape(20.dp))
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.linearGradient(
@@ -393,7 +398,7 @@ fun TileWallScreen(
                         Switch(
                             checked = showTitle,
                             onCheckedChange = null,
-                            modifier = Modifier.androidx.compose.ui.draw.scale(0.7f),
+                            modifier = Modifier.scale(0.7f),
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
                                 checkedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
@@ -619,33 +624,33 @@ private fun TileContent(
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 fun GlassMenuItem(
     text: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
-    trailingContent: @androidx.compose.runtime.Composable (() -> Unit)? = null
+    trailingContent: @Composable (() -> Unit)? = null
 ) {
     androidx.compose.foundation.layout.Row(
-        modifier = androidx.compose.ui.Modifier
-            .androidx.compose.foundation.layout.fillMaxWidth()
-            .androidx.compose.ui.draw.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .androidx.compose.foundation.clickable(onClick = onClick)
-            .androidx.compose.foundation.layout.padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         androidx.compose.material3.Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = androidx.compose.ui.Modifier.androidx.compose.foundation.layout.size(20.dp),
+            modifier = Modifier.size(20.dp),
             tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
         )
-        androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.androidx.compose.foundation.layout.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         androidx.compose.material3.Text(
             text = text,
-            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
-            modifier = androidx.compose.ui.Modifier.weight(1f)
+            modifier = Modifier.weight(1f)
         )
         if (trailingContent != null) {
             trailingContent()
