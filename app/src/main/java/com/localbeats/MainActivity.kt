@@ -336,7 +336,7 @@ fun MusicApp(
                 onPlayPauseClick = { viewModel.togglePlayPause() },
                 onPreviousClick = { viewModel.playPrevious() },
                 onNextClick = { viewModel.playNext() },
-                currentPosition = currentPosition,
+                currentPositionProvider = { currentPosition },
                 duration = duration,
                 onSeek = { viewModel.seekTo(it) },
                 onOrientationToggleClick = toggleOrientation
@@ -350,7 +350,7 @@ fun MusicApp(
                 onPlayPauseClick = { viewModel.togglePlayPause() },
                 onPreviousClick = { viewModel.playPrevious() },
                 onNextClick = { viewModel.playNext() },
-                currentPosition = currentPosition,
+                currentPositionProvider = { currentPosition },
                 duration = duration,
                 onSeek = { viewModel.seekTo(it) },
                 onImportClick = onSettingsClick,

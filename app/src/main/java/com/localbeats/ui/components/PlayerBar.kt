@@ -73,7 +73,7 @@ fun PlayerBar(
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit = {},
     onNextClick: () -> Unit = {},
-    currentPosition: Long = 0L,
+    currentPositionProvider: () -> Long = { 0L },
     duration: Long = 0L,
     onSeek: (Long) -> Unit = {},
     coverUri: android.net.Uri? = null,
@@ -97,7 +97,7 @@ fun PlayerBar(
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
     // LRC 同步模式：定位当前行；若处于第一行之前的前奏，回退显示第一行（避免空白）
     val currentLyricIndex = if (isSynced) {
-        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition + 300L)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPositionProvider() + 300L)
         if (idx < 0) 0 else idx
     } else -1
     val currentLyricText = when {

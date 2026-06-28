@@ -109,7 +109,7 @@ fun TileWallScreen(
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit = {},
     onNextClick: () -> Unit = {},
-    currentPosition: Long = 0L,
+    currentPositionProvider: () -> Long = { 0L },
     duration: Long = 0L,
     onSeek: (Long) -> Unit = {},
     onImportClick: () -> Unit = {},
@@ -139,6 +139,7 @@ fun TileWallScreen(
     }
 
     var containerWidth by remember { mutableIntStateOf(0) }
+    var containerHeight by remember { mutableIntStateOf(0) }
 
     // 列数：视口实际测量宽度决定，+1 列保证略宽于视口（可横向平移一点），如果还没测量好，默认5列
     val columns = if (containerWidth > 0) max(3, (containerWidth / cellPx).toInt()) + 1 else 5
@@ -202,6 +203,7 @@ fun TileWallScreen(
             .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
             .onGloballyPositioned { coords ->
                 containerWidth = coords.size.width
+                containerHeight = coords.size.height
             }
             .pointerInput(gridW, gridH) {
                 detectDragGestures(
@@ -245,6 +247,33 @@ fun TileWallScreen(
                                     .graphicsLayer {
                                         scaleX = scale
                                         scaleY = scale
+                                        
+                                        // 方案 1：将滑动位移放到 GPU 绘制层，避免测量重排
+                                        translationX = offsetX
+                                        translationY = offsetY
+                                        
+                                        // 方案 2：视口边界裁剪剔除 (Culling)
+                                        val dx = when (copyIndex) {
+                                            1, 3 -> gridW
+                                            else -> 0f
+                                        }
+                                        val dy = when (copyIndex) {
+                                            2, 3 -> gridH
+                                            else -> 0f
+                                        }
+                                        val pos = tilePositions[track.id] ?: (0 to 0)
+                                        val tileX = pos.first * cellPx + dx
+                                        val tileY = pos.second * cellPx + dy
+                                        
+                                        val drawX = tileX + offsetX
+                                        val drawY = tileY + offsetY
+                                        
+                                        val span = tileSpansMap[track.id] ?: (1 to 1)
+                                        val tileW = span.first * cellPx
+                                        val tileH = span.second * cellPx
+                                        
+                                        val isVisible = !(drawX + tileW < 0 || drawX > containerWidth || drawY + tileH < 0 || drawY > containerHeight)
+                                        alpha = if (isVisible) 1f else 0f
                                     }
                                     .clip(RoundedCornerShape(0.dp))
                                     .clickable(
@@ -304,8 +333,8 @@ fun TileWallScreen(
                         }
 
                         val pos = tilePositions[track.id] ?: (0 to 0)
-                        val drawX = (pos.first * cellPx).toInt() + dx + offsetX.toInt()
-                        val drawY = (pos.second * cellPx).toInt() + dy + offsetY.toInt()
+                        val drawX = (pos.first * cellPx).toInt() + dx
+                        val drawY = (pos.second * cellPx).toInt() + dy
                         placeable.placeRelative(drawX, drawY)
                     }
                 }
@@ -514,7 +543,7 @@ fun TileWallScreen(
             onPlayPauseClick = onPlayPauseClick,
             onPreviousClick = onPreviousClick,
             onNextClick = onNextClick,
-            currentPosition = currentPosition,
+            currentPositionProvider = currentPositionProvider,
             duration = duration,
             onSeek = onSeek,
             onOrientationToggleClick = onOrientationToggleClick,
