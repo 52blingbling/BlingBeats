@@ -137,14 +137,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     FolderSelectionScreen(
                         viewModel = viewModel,
-                        currentThemeMode = themeMode,
-                        onThemeModeChange = { newMode ->
-                            themeMode = newMode
-                            getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
-                                .edit()
-                                .putInt("theme_mode", newMode)
-                                .apply()
-                        },
                         onConfirm = { ignored, filterShort ->
                             saveIgnoredFolders(ignored, filterShort)
                             hasCompletedSetup = true
@@ -159,6 +151,14 @@ class MainActivity : ComponentActivity() {
                 ) {
                     MusicApp(
                         viewModel = viewModel,
+                        currentThemeMode = themeMode,
+                        onThemeModeChange = { newMode ->
+                            themeMode = newMode
+                            getSharedPreferences("localbeats_prefs", MODE_PRIVATE)
+                                .edit()
+                                .putInt("theme_mode", newMode)
+                                .apply()
+                        },
                         onSettingsClick = { showFolderSelection = true }
                     )
                 }
@@ -211,6 +211,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MusicApp(
     viewModel: MusicViewModel,
+    currentThemeMode: Int,
+    onThemeModeChange: (Int) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val tracks by viewModel.tracks.collectAsState()
@@ -307,7 +309,9 @@ fun MusicApp(
                 onSeek = { viewModel.seekTo(it) },
                 onImportClick = onSettingsClick,
                 onRescan = { viewModel.rescanDevice() },
-                onOrientationToggleClick = toggleOrientation
+                onOrientationToggleClick = toggleOrientation,
+                currentThemeMode = currentThemeMode,
+                onThemeModeChange = onThemeModeChange
             )
         }
     }
@@ -515,8 +519,6 @@ fun WelcomeScreen(onScanMusic: () -> Unit) {
 @Composable
 fun FolderSelectionScreen(
     viewModel: MusicViewModel,
-    currentThemeMode: Int,
-    onThemeModeChange: (Int) -> Unit,
     onConfirm: (Set<String>, Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -577,24 +579,8 @@ fun FolderSelectionScreen(
                     .padding(padding)
             ) {
                 item {
-                    // 主题切换
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Text(text = "外观与主题", color = MaterialTheme.colorScheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceAround
-                        ) {
-                            ThemeOption(label = "跟随系统", selected = currentThemeMode == 0, onClick = { onThemeModeChange(0) })
-                            ThemeOption(label = "浅色模式", selected = currentThemeMode == 1, onClick = { onThemeModeChange(1) })
-                            ThemeOption(label = "深色模式", selected = currentThemeMode == 2, onClick = { onThemeModeChange(2) })
-                        }
-                    }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)))
+                    // (Theme selection removed from here)
+                    
                     
                     // 过滤短音频
                     Row(

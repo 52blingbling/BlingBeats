@@ -171,13 +171,13 @@ fun PlayerBar(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center
                     ) {
+                        val displayTitle = if (!artist.isNullOrBlank() && artist != "<unknown>") "$title - $artist" else title
                         Text(
-                            text = title,
+                            text = displayTitle,
                             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             // 标题超长时 marquee 滚动
                             modifier = Modifier.basicMarquee(
                                 velocity = 40.dp,
@@ -201,7 +201,6 @@ fun PlayerBar(
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Normal,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                     // 同步和非同步歌词都统一加上 basicMarquee，如果长度超过容器，它会自动滚动显示，否则静止。
                                     modifier = Modifier.basicMarquee(
                                         velocity = 35.dp,

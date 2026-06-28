@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -22,6 +23,9 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -58,6 +62,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +108,8 @@ fun TileWallScreen(
     onReorder: (Int, Int) -> Unit = { _, _ -> },
     onRescan: () -> Unit = {},
     onOrientationToggleClick: (() -> Unit)? = null,
+    currentThemeMode: Int = 1,
+    onThemeModeChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -371,6 +378,32 @@ fun TileWallScreen(
                                     )
                                 }
                             )
+                            DropdownMenuItem(
+                                text = {
+                                    val modeName = when (currentThemeMode) {
+                                        0 -> "跟随系统"
+                                        1 -> "浅色模式"
+                                        else -> "深色模式"
+                                    }
+                                    Text("主题模式: $modeName")
+                                },
+                                onClick = {
+                                    // 循环切换：跟随系统(0) -> 浅色(1) -> 深色(2) -> 跟随系统(0)...
+                                    onThemeModeChange((currentThemeMode + 1) % 3)
+                                },
+                                leadingIcon = {
+                                    val icon = when (currentThemeMode) {
+                                        0 -> Icons.Filled.BrightnessAuto
+                                        1 -> Icons.Filled.LightMode
+                                        else -> Icons.Filled.DarkMode
+                                    }
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
                         }
                     }
                 }
@@ -547,15 +580,28 @@ private fun TileContent(
         }
 
         if (showTitle) {
-            Text(
-                text = track.title,
-                color = Color.White,
-                maxLines = if (spanHeight >= 2) 3 else 2,
-                style = MaterialTheme.typography.bodySmall,
+            Column(
                 modifier = Modifier
                     .padding(8.dp)
                     .align(Alignment.BottomStart)
-            )
+            ) {
+                Text(
+                    text = track.title,
+                    color = Color.White,
+                    maxLines = if (spanHeight >= 2) 2 else 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!track.artist.isNullOrBlank() && track.artist != "<unknown>") {
+                    Text(
+                        text = track.artist,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 import com.localbeats.data.model.MusicTrack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,9 @@ class MusicPlayer(context: Context) {
         )
         .setHandleAudioBecomingNoisy(true)
         .build()
+
+    // 绑定系统 MediaSession，让通知栏、锁屏、蓝牙耳机都能控制播放器
+    private val mediaSession = MediaSession.Builder(context, exoPlayer).build()
 
     private val _currentTrack = MutableStateFlow<MusicTrack?>(null)
     val currentTrack: StateFlow<MusicTrack?> = _currentTrack.asStateFlow()
@@ -181,6 +185,7 @@ class MusicPlayer(context: Context) {
 
     fun release() {
         exoPlayer.removeListener(listener)
+        mediaSession.release()
         exoPlayer.release()
     }
 }
