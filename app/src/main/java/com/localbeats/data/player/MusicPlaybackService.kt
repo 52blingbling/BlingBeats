@@ -10,15 +10,21 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 class MusicPlaybackService : MediaSessionService() {
-    companion object {
-        var playerInstance: ExoPlayer? = null
-    }
-    
     private var mediaSession: MediaSession? = null
+    private var player: ExoPlayer? = null
 
     override fun onCreate() {
         super.onCreate()
-        val player = playerInstance ?: return
+        player = ExoPlayer.Builder(this)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .setUsage(C.USAGE_MEDIA)
+                    .build(),
+                true
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build()
         
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -30,7 +36,7 @@ class MusicPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaSession.Builder(this, player!!)
             .setSessionActivity(pendingIntent)
             .build()
     }
@@ -41,6 +47,7 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mediaSession?.run {
+            player.release()
             release()
             mediaSession = null
         }
