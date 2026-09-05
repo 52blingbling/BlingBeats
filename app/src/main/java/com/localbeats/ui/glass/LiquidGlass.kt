@@ -49,13 +49,12 @@ enum class LiquidGlassStyle {
  */
 private object LiquidGlassShaderCache {
     /**
-     * 3D 液态玻璃透镜折射与物理光影着色器 (AGSL)
-     * 结合 Kyant0 SDF 梯度法线，实现：
-     * 1. 物理凸透镜曲率折射 (Meniscus Refraction)
-     * 2. 棱镜边缘微色散 (Prismatic Dispersion)
-     * 3. 3D 定向镜面高光弧 (3D Specular Glint)
-     * 4. 菲涅尔内边缘聚光光环 (Caustic Halo)
-     * 5. 底部环境漫反射反光 (Ambient Bounce)
+     * Kyant0 官方标准圆角矩形透镜折射着色器 (RoundedRectRefractionShader)
+     * 官方标准参数：
+     * - refractionHeight: 12~16dp
+     * - refractionAmount: 24dp
+     * - depthEffect: 1.0 (开启)
+     * - chromaticAberration: 0 (官方默认关闭色散，保持 iOS 纯净通透质感)
      */
     private const val AGSL_LENS_SHADER = """
         uniform shader content;
@@ -65,14 +64,13 @@ private object LiquidGlassShaderCache {
         uniform float refractionHeight;
         uniform float refractionAmount;
         uniform float depthEffect;
-        uniform float chromaticAberration;
 
-        float radiusAt(float2 centeredCoord, float4 radii) {
-            if (centeredCoord.x >= 0.0) {
-                if (centeredCoord.y <= 0.0) return radii.y;
+        float radiusAt(float2 coord, float4 radii) {
+            if (coord.x >= 0.0) {
+                if (coord.y <= 0.0) return radii.y;
                 else return radii.z;
             } else {
-                if (centeredCoord.y <= 0.0) return radii.x;
+                if (coord.y <= 0.0) return radii.x;
                 else return radii.w;
             }
         }
@@ -104,65 +102,16 @@ private object LiquidGlassShaderCache {
             float radius = radiusAt(centeredCoord, cornerRadii);
             
             float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-            
-            // 边缘外部严格不处理
-            if (sd > 0.0) {
+            if (sd > 0.0 || -sd >= refractionHeight) {
                 return content.eval(coord);
             }
             
-            // 1. 物理凸透镜曲率折射位移计算
-            float2 grad = float2(0.0);
-            float2 refractedCoord = coord;
-            float factor = 0.0;
+            float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
+            float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+            float2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius) + depthEffect * normalize(centeredCoord));
             
-            if (-sd < refractionHeight) {
-                factor = circleMap(1.0 - -sd / refractionHeight);
-                float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-                grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius) + depthEffect * normalize(centeredCoord));
-                float d = factor * refractionAmount;
-                refractedCoord = coord + d * grad;
-            }
-            
-            // 2. 棱镜微色散采样 (Chromatic Dispersion)
-            float dispersion = chromaticAberration * 0.20 * factor;
-            float2 disp = grad * (refractionAmount * dispersion);
-            
-            half4 cR = content.eval(refractedCoord + disp);
-            half4 cG = content.eval(refractedCoord);
-            half4 cB = content.eval(refractedCoord - disp);
-            
-            half baseA = (cR.a + cG.a + cB.a) * 0.33333;
-            half3 baseRgb = min(half3(cR.r, cG.g, cB.b), half3(baseA));
-            
-            // 3. 动态 3D 光影与高光反射模型 (3D Specular & Caustic Ring)
-            // 虚拟光源从左上方照射 (约 -45 度夹角)
-            float2 lightDir = normalize(float2(-0.707, -0.707));
-            float gradRadiusFull = min(radius * 1.5, min(halfSize.x, halfSize.y));
-            float2 surfaceNormal = gradSdRoundedRect(centeredCoord, halfSize, gradRadiusFull);
-            
-            // 镜面强高光 (Specular Glint) - 沿左上边缘产生耀眼的玻璃折射光弧
-            float nDotL = max(dot(surfaceNormal, -lightDir), 0.0);
-            float specular = pow(nDotL, 12.0);
-            float specularMask = smoothstep(0.0, -2.5, sd) * (1.0 - smoothstep(-refractionHeight * 0.75, -refractionHeight, sd));
-            float specularIntensity = specular * specularMask * 0.92;
-            
-            // 菲涅尔内透镜聚光折射环 (Caustic Halo) - 形成水珠般晶莹剔透的光环
-            float rimMask = smoothstep(0.0, -1.2, sd) * (1.0 - smoothstep(-refractionHeight, -refractionHeight - 4.0, sd));
-            float causticGlow = pow(1.0 - (-sd / refractionHeight), 2.0) * rimMask * 0.40;
-            
-            // 底部环境漫反射反光 (Ambient Bounce Light)
-            float ambientDot = max(dot(surfaceNormal, lightDir), 0.0);
-            float ambientBounce = pow(ambientDot, 6.0) * specularMask * 0.22;
-            
-            // 4. 光影与图层物理混合 (保障 Skia 预乘 Alpha 规范)
-            float totalLight = specularIntensity + causticGlow + ambientBounce;
-            half3 lightRgb = half3(1.0, 1.0, 1.0) * totalLight;
-            
-            half3 finalRgb = baseRgb + lightRgb;
-            half finalA = max(baseA, half(totalLight * 0.85));
-            finalRgb = min(finalRgb, half3(finalA));
-            
-            return half4(finalRgb, finalA);
+            float2 refractedCoord = coord + d * grad;
+            return content.eval(refractedCoord);
         }
     """
 
@@ -181,31 +130,35 @@ private object LiquidGlassShaderCache {
 
 /**
  * 核心液态玻璃 Modifier：
- * 集成真实物理光学（凸透镜弧面折射、3D 镜面强高光弧、菲涅尔晶体聚光环、倒角深阴影、微色散、弹簧物理触控）。
+ * 采用 Kyant0 官方仓库及 iOS 原生磨砂玻璃（Frosted / Liquid Glass）标准设计：
+ * - 纯净半透磨砂基底（无杂色死白）
+ * - 顶部自然下沉的发丝级微光描边（iOS Hairline Specular Border）
+ * - 柔和深邃的物理悬浮阴影（iOS Ambient Shadow）
+ * - Android 13+ 官方 AGSL 凸透镜曲率折射
  */
 fun Modifier.liquidGlass(
     shape: Shape = RoundedCornerShape(24.dp),
     style: LiquidGlassStyle = LiquidGlassStyle.Card,
     tint: Color = Color.Unspecified,
-    blurRadius: Dp = 20.dp,
+    blurRadius: Dp = 16.dp,
     elevation: Dp = when (style) {
-        LiquidGlassStyle.Pill -> 18.dp
-        LiquidGlassStyle.Card -> 12.dp
-        LiquidGlassStyle.Button -> 8.dp
-        LiquidGlassStyle.UltraThin -> 4.dp
+        LiquidGlassStyle.Pill -> 14.dp
+        LiquidGlassStyle.Card -> 10.dp
+        LiquidGlassStyle.Button -> 6.dp
+        LiquidGlassStyle.UltraThin -> 3.dp
     },
-    borderWidth: Dp = 1.2.dp,
+    borderWidth: Dp = 0.8.dp,
     interactive: Boolean = false,
     onClick: (() -> Unit)? = null
 ): Modifier = composed {
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
 
-    // 弹簧按压物理反馈
+    // 弹簧按压物理反馈 (iOS 经典物理触控阻尼)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (interactive && isPressed) 0.96f else 1f,
+        targetValue = if (interactive && isPressed) 0.965f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
@@ -213,40 +166,33 @@ fun Modifier.liquidGlass(
         label = "glass_scale"
     )
 
-    // 晶体通透基底透明度（告别死板灰块，还原清澈晶体）
-    val crystalTopAlpha = when (style) {
-        LiquidGlassStyle.Pill -> if (isDark) 0.16f else 0.55f
-        LiquidGlassStyle.Card -> if (isDark) 0.12f else 0.45f
-        LiquidGlassStyle.Button -> if (isDark) 0.20f else 0.65f
-        LiquidGlassStyle.UltraThin -> if (isDark) 0.08f else 0.30f
-    }
-    val crystalBottomAlpha = when (style) {
-        LiquidGlassStyle.Pill -> if (isDark) 0.32f else 0.35f
-        LiquidGlassStyle.Card -> if (isDark) 0.24f else 0.28f
-        LiquidGlassStyle.Button -> if (isDark) 0.38f else 0.45f
-        LiquidGlassStyle.UltraThin -> if (isDark) 0.16f else 0.18f
+    // iOS 标准半透磨砂基底配色（纯净深邃，绝不发灰发死）
+    val surfaceColor = if (tint.isSpecified) {
+        tint.copy(alpha = if (isDark) 0.55f else 0.65f)
+    } else {
+        if (isDark) {
+            Color(0xFF1E1E24).copy(alpha = 0.62f)
+        } else {
+            Color.White.copy(alpha = 0.72f)
+        }
     }
 
-    val topSurfaceColor = if (tint.isSpecified) {
-        tint.copy(alpha = crystalTopAlpha)
+    val bottomTint = if (tint.isSpecified) {
+        tint.copy(alpha = if (isDark) 0.62f else 0.72f)
     } else {
-        if (isDark) Color.White.copy(alpha = crystalTopAlpha) else Color.White.copy(alpha = crystalTopAlpha)
+        if (isDark) {
+            Color(0xFF141418).copy(alpha = 0.68f)
+        } else {
+            Color.White.copy(alpha = 0.58f)
+        }
     }
 
-    val bottomSurfaceColor = if (tint.isSpecified) {
-        tint.copy(alpha = crystalBottomAlpha)
-    } else {
-        if (isDark) Color(0xFF0D0D18).copy(alpha = crystalBottomAlpha) else Color.White.copy(alpha = crystalBottomAlpha)
-    }
-
-    // 3D 镜面棱镜边框高光（从左上强光到右下微反光）
-    val borderTopLeft = if (isDark) {
-        Color.White.copy(alpha = if (isPressed) 0.95f else 0.85f)
-    } else {
-        Color.White.copy(alpha = if (isPressed) 0.98f else 0.90f)
-    }
-    val borderMidAngle = if (isDark) Color(0xFFD2E3FC).copy(alpha = 0.50f) else Color.White.copy(alpha = 0.60f)
-    val borderBottomRight = if (isDark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.25f)
+    // iOS 经典发丝微光描边（从顶部柔和过渡到底部，彻底杜绝右下角死白）
+    val borderBrush = Brush.verticalGradient(
+        0.0f to Color.White.copy(alpha = if (isDark) 0.32f else 0.65f),
+        0.5f to Color.White.copy(alpha = if (isDark) 0.10f else 0.25f),
+        1.0f to Color.White.copy(alpha = if (isDark) 0.02f else 0.08f)
+    )
 
     // 组合 Modifier
     this
@@ -256,7 +202,7 @@ fun Modifier.liquidGlass(
             this.shape = shape
             clip = true
 
-            // Android 13+ (API 33+) 3D 透镜折射与物理光影着色器
+            // Android 13+ (API 33+) Kyant0 官方标准透镜折射
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 LiquidGlassShaderCache.shader?.let { s ->
                     try {
@@ -268,16 +214,16 @@ fun Modifier.liquidGlass(
                             else -> 16.dp.toPx().coerceAtMost(size.minDimension * 0.5f)
                         }
                         s.setFloatUniform("cornerRadii", r, r, r, r)
-                        val refHeight = 16.dp.toPx().coerceAtMost(size.minDimension * 0.35f)
+                        // Kyant0 官方推荐透镜标准参数
+                        val refHeight = 12.dp.toPx().coerceAtMost(size.minDimension * 0.30f)
                         s.setFloatUniform("refractionHeight", refHeight)
-                        s.setFloatUniform("refractionAmount", -refHeight * 0.70f)
-                        s.setFloatUniform("depthEffect", 0.30f)
-                        s.setFloatUniform("chromaticAberration", 0.85f)
+                        s.setFloatUniform("refractionAmount", 24.dp.toPx().coerceAtMost(size.minDimension * 0.45f))
+                        s.setFloatUniform("depthEffect", 1.0f)
                         renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(s, "content").asComposeRenderEffect()
                     } catch (e: Throwable) {}
                 }
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadius > 0.dp) {
-                // Android 12 (API 31/32) 高斯模糊降级
+                // Android 12 (API 31/32) 优雅高斯模糊
                 try {
                     val px = blurRadius.toPx()
                     renderEffect = android.graphics.RenderEffect.createBlurEffect(
@@ -286,12 +232,12 @@ fun Modifier.liquidGlass(
                 } catch (e: Throwable) {}
             }
         }
-        // 外阴影增加空间悬浮厚度
+        // iOS 柔和环境空间阴影
         .shadow(
             elevation = elevation,
             shape = shape,
-            ambientColor = if (tint.isSpecified) tint.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.50f),
-            spotColor = if (tint.isSpecified) tint.copy(alpha = 0.45f) else Color.Black.copy(alpha = 0.60f)
+            ambientColor = Color.Black.copy(alpha = 0.25f),
+            spotColor = Color.Black.copy(alpha = 0.35f)
         )
         .clip(shape)
         .then(
@@ -305,62 +251,22 @@ fun Modifier.liquidGlass(
                 Modifier
             }
         )
-        // 绘制多层次真实玻璃材质与物理光影
+        // 绘制 iOS 标准纯净磨砂玻璃基底
         .drawWithContent {
-            // 1. 绘制清澈通透晶体基底
+            // 绘制纯净半透微渐变底色
             drawRect(
                 brush = Brush.verticalGradient(
-                    0.0f to topSurfaceColor,
-                    1.0f to bottomSurfaceColor
+                    colors = listOf(surfaceColor, bottomTint)
                 )
             )
 
-            // 2. 绘制 3D 镜面斜角聚光扫光束 (Specular Light Beam)
-            drawRect(
-                brush = Brush.linearGradient(
-                    0.0f to Color.White.copy(alpha = if (isDark) 0.35f else 0.45f),
-                    0.25f to Color.White.copy(alpha = if (isDark) 0.10f else 0.18f),
-                    0.65f to Color.Transparent,
-                    start = Offset.Zero,
-                    end = Offset(size.width * 0.70f, size.height)
-                )
-            )
-
-            // 3. 绘制顶部折射聚光棱线 (Top Crest Caustic Highlight)
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0.0f to Color.White.copy(alpha = if (isDark) 0.40f else 0.50f),
-                    0.12f to Color.White.copy(alpha = if (isDark) 0.08f else 0.15f),
-                    0.30f to Color.Transparent,
-                    startY = 0f,
-                    endY = size.height * 0.4f
-                )
-            )
-
-            // 4. 绘制底部内倒角物理厚度阴影 (Bottom Inner Depth Bevel)
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0.70f to Color.Transparent,
-                    1.0f to Color.Black.copy(alpha = if (isDark) 0.38f else 0.15f),
-                    startY = size.height * 0.5f,
-                    endY = size.height
-                )
-            )
-
-            // 5. 绘制内容 (图标、文字、封面)
+            // 绘制内容 (图标、文字、封面)
             drawContent()
         }
-        // 6. 3D 棱镜折射双重高光外边框 (Prismatic Light Rim)
+        // iOS 经典发丝级顶部自然高光描边 (Hairline Highlight Border)
         .border(
             width = borderWidth,
-            brush = Brush.linearGradient(
-                0.0f to borderTopLeft,
-                0.35f to borderMidAngle,
-                0.70f to borderBottomRight.copy(alpha = borderBottomRight.alpha * 0.4f),
-                1.0f to borderBottomRight,
-                start = Offset.Zero,
-                end = Offset.Infinite
-            ),
+            brush = borderBrush,
             shape = shape
         )
 }

@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.palette.graphics.Palette
 import com.localbeats.data.lyrics.LyricsParser
 import com.localbeats.data.model.MusicTrack
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
@@ -374,30 +375,47 @@ fun CarouselScreen(
                 }
             }
 
-            // ── Song title (top, below top film strip) ────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.60f), Color.Transparent)
-                        )
-                    )
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 28.dp, bottom = 6.dp)
-            ) {
-                Text(
-                    text = currentTrack?.title ?: "",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+            // ── Song title (top, floating liquid glass capsule) ───────────────
+            val songTitle = currentTrack?.title
+            if (!songTitle.isNullOrBlank()) {
+                Box(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .padding(horizontal = 32.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(top = 26.dp, bottom = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .liquidGlass(
+                                shape = CircleShape,
+                                style = LiquidGlassStyle.Pill,
+                                elevation = 6.dp,
+                                borderWidth = 0.8.dp
+                            )
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                    ) {
+                        AnimatedContent(
+                            targetState = songTitle,
+                            transitionSpec = {
+                                (fadeIn(tween(250)) + slideInVertically { -it / 2 })
+                                    .togetherWith(fadeOut(tween(200)) + slideOutVertically { it / 2 })
+                            },
+                            label = "title_change",
+                            modifier = Modifier.align(Alignment.Center)
+                        ) { titleText ->
+                            Text(
+                                text = titleText,
+                                color = Color.White.copy(alpha = 0.95f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
 
             // ── Synced lyrics (bottom floating liquid glass card) ─────────────
