@@ -62,12 +62,12 @@ private object LiquidGlassShaderCache {
         uniform float depthEffect;
         uniform float chromaticAberration;
 
-        float radiusAt(float2 coord, float4 radii) {
-            if (coord.x >= 0.0) {
-                if (coord.y <= 0.0) return radii.y;
+        float radiusAt(float2 centeredCoord, float4 radii) {
+            if (centeredCoord.x >= 0.0) {
+                if (centeredCoord.y <= 0.0) return radii.y;
                 else return radii.z;
             } else {
-                if (coord.y <= 0.0) return radii.x;
+                if (centeredCoord.y <= 0.0) return radii.x;
                 else return radii.w;
             }
         }
@@ -96,57 +96,39 @@ private object LiquidGlassShaderCache {
         half4 main(float2 coord) {
             float2 halfSize = size * 0.5;
             float2 centeredCoord = (coord + offset) - halfSize;
-            float radius = radiusAt(coord, cornerRadii);
+            float radius = radiusAt(centeredCoord, cornerRadii);
             
             float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-            if (-sd >= refractionHeight) {
+            // 核心修复 1：严格限制在玻璃边缘内部发生折射。外部(sd > 0)或中心平坦无折射区直接返回原始图层，绝不处理！
+            if (sd > 0.0 || -sd >= refractionHeight) {
                 return content.eval(coord);
             }
-            sd = min(sd, 0.0);
             
-            float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
+            float factor = circleMap(1.0 - -sd / refractionHeight);
+            float d = factor * refractionAmount;
             float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
             float2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius) + depthEffect * normalize(centeredCoord));
             
             float2 refractedCoord = coord + d * grad;
-            float dispersionIntensity = chromaticAberration * ((centeredCoord.x * centeredCoord.y) / max(halfSize.x * halfSize.y, 1.0));
+            
+            // 核心修复 2：将色散严格限制在边缘微幅偏移（0.2以内），防止大面积彩条溢出
+            float dispersionIntensity = chromaticAberration * 0.20 * ((abs(centeredCoord.x) * abs(centeredCoord.y)) / max(halfSize.x * halfSize.y, 1.0));
             float2 dispersedCoord = d * grad * dispersionIntensity;
             
-            half4 color = half4(0.0);
+            // 核心修复 3：预乘 Alpha 保护 (Premultiplied Alpha Protection)，RGB 严禁超过 Alpha，彻底消除满屏霓虹彩条纹！
+            float2 offsetR = refractedCoord + dispersedCoord;
+            float2 offsetG = refractedCoord;
+            float2 offsetB = refractedCoord - dispersedCoord;
             
-            half4 red = content.eval(refractedCoord + dispersedCoord);
-            color.r += red.r / 3.5;
-            color.a += red.a / 7.0;
+            half4 cR = content.eval(offsetR);
+            half4 cG = content.eval(offsetG);
+            half4 cB = content.eval(offsetB);
             
-            half4 orange = content.eval(refractedCoord + dispersedCoord * (2.0 / 3.0));
-            color.r += orange.r / 3.5;
-            color.g += orange.g / 7.0;
-            color.a += orange.a / 7.0;
+            half alpha = (cR.a + cG.a + cB.a) * 0.33333;
+            half3 rgb = half3(cR.r, cG.g, cB.b);
+            rgb = min(rgb, half3(alpha));
             
-            half4 yellow = content.eval(refractedCoord + dispersedCoord * (1.0 / 3.0));
-            color.r += yellow.r / 3.5;
-            color.g += yellow.g / 3.5;
-            color.a += yellow.a / 7.0;
-            
-            half4 green = content.eval(refractedCoord);
-            color.g += green.g / 3.5;
-            color.a += green.a / 7.0;
-            
-            half4 cyan = content.eval(refractedCoord - dispersedCoord * (1.0 / 3.0));
-            color.g += cyan.g / 3.5;
-            color.b += cyan.b / 3.0;
-            color.a += cyan.a / 7.0;
-            
-            half4 blue = content.eval(refractedCoord - dispersedCoord * (2.0 / 3.0));
-            color.b += blue.b / 3.0;
-            color.a += blue.a / 7.0;
-            
-            half4 purple = content.eval(refractedCoord - dispersedCoord);
-            color.r += purple.r / 7.0;
-            color.b += purple.b / 3.0;
-            color.a += purple.a / 7.0;
-            
-            return color;
+            return half4(rgb, alpha);
         }
     """
 
@@ -244,7 +226,7 @@ fun Modifier.liquidGlass(
             scaleX = scale
             scaleY = scale
             this.shape = shape
-            clip = false
+            clip = true
 
             // Android 13+ (API 33+) 凸透镜折射与色散着色器 (Kyant0 核心算法)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -258,11 +240,11 @@ fun Modifier.liquidGlass(
                             else -> 16.dp.toPx().coerceAtMost(size.minDimension * 0.5f)
                         }
                         s.setFloatUniform("cornerRadii", r, r, r, r)
-                        val refHeight = 18.dp.toPx().coerceAtMost(size.minDimension * 0.35f)
+                        val refHeight = 14.dp.toPx().coerceAtMost(size.minDimension * 0.25f)
                         s.setFloatUniform("refractionHeight", refHeight)
-                        s.setFloatUniform("refractionAmount", -refHeight * 0.85f)
-                        s.setFloatUniform("depthEffect", 0.35f)
-                        s.setFloatUniform("chromaticAberration", 1.0f)
+                        s.setFloatUniform("refractionAmount", -refHeight * 0.65f)
+                        s.setFloatUniform("depthEffect", 0.25f)
+                        s.setFloatUniform("chromaticAberration", 0.75f)
                         renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(s, "content").asComposeRenderEffect()
                     } catch (e: Throwable) {}
                 }

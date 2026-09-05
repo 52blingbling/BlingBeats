@@ -102,7 +102,7 @@ fun CarouselScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val screenHeightDp = configuration.screenHeightDp.dp
-    val frameSize = (screenHeightDp * 0.54f).coerceAtMost(220.dp).coerceAtLeast(150.dp)
+    val frameSize = (screenHeightDp * 0.64f).coerceAtMost(260.dp).coerceAtLeast(180.dp)
     val gapDp = 12.dp
 
     val framePx = with(density) { frameSize.toPx() }
@@ -374,23 +374,23 @@ fun CarouselScreen(
                 }
             }
 
-            // ── Song title (top, near screen edge) ────────────────────────────
+            // ── Song title (top, below top film strip) ────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                            listOf(Color.Black.copy(alpha = 0.60f), Color.Transparent)
                         )
                     )
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 8.dp, bottom = 4.dp)
+                    .padding(top = 28.dp, bottom = 6.dp)
             ) {
                 Text(
                     text = currentTrack?.title ?: "",
                     color = Color.White,
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -407,7 +407,7 @@ fun CarouselScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp)
+                        .padding(bottom = 24.dp)
                         .padding(horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
