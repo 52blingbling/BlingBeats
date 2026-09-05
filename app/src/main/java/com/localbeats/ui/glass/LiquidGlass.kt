@@ -258,7 +258,7 @@ fun Modifier.liquidGlass(
                 0.8f to highlightBottomRight,
                 1.0f to highlightBottomRight.copy(alpha = 0.02f),
                 start = Offset.Zero,
-                end = Offset(size.width, size.height)
+                end = Offset.Infinite
             ),
             shape = shape
         )
