@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.sp
 import androidx.palette.graphics.Palette
 import com.localbeats.data.lyrics.LyricsParser
 import com.localbeats.data.model.MusicTrack
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
@@ -375,34 +374,31 @@ fun CarouselScreen(
                 }
             }
 
-            // ── Song title (top floating liquid glass pill) ───────────────────
+            // ── Song title (top, near screen edge) ────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 28.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .liquidGlass(
-                            shape = CircleShape,
-                            style = LiquidGlassStyle.Pill,
-                            tint = rawBgColor.copy(alpha = 0.25f),
-                            elevation = 8.dp
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
                         )
-                        .padding(horizontal = 22.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = currentTrack?.title ?: "",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
-                }
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    // top padding bumped to 24dp so title clears the sprocket hole strip
+                    .padding(top = 24.dp, bottom = 6.dp)
+            ) {
+                Text(
+                    text = currentTrack?.title ?: "",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 32.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             // ── Synced lyrics (bottom floating liquid glass card) ─────────────

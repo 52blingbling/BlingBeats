@@ -89,8 +89,6 @@ import com.localbeats.ui.components.PlayerBar
 import com.localbeats.ui.components.placeholderPalettes
 import com.localbeats.ui.glass.LiquidGlassStyle
 import com.localbeats.ui.glass.LiquidIconButton
-import com.localbeats.ui.glass.LiquidPill
-import com.localbeats.ui.glass.LiquidAmbientBackground
 import com.localbeats.ui.glass.liquidGlass
 import com.localbeats.data.model.MusicTrack
 import kotlin.math.max
@@ -243,13 +241,6 @@ fun TileWallScreen(
                 )
             }
     ) {
-        // 底层液态流光漫反射背景
-        LiquidAmbientBackground(
-            primaryColor = currentPalette[0],
-            secondaryColor = currentPalette[1],
-            tertiaryColor = currentPalette.getOrNull(2) ?: currentPalette[0]
-        )
-
         androidx.compose.ui.layout.Layout(
             content = {
                 // 渲染 4 份拷贝 (2x2) 以在无限滑动时无缝衔接
@@ -305,17 +296,7 @@ fun TileWallScreen(
                                         val isVisible = !(drawX + tileW < 0 || drawX > containerWidth || drawY + tileH < 0 || drawY > containerHeight)
                                         alpha = if (isVisible) 1f else 0f
                                     }
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .border(
-                                        width = 0.6.dp,
-                                        brush = Brush.linearGradient(
-                                            listOf(
-                                                Color.White.copy(alpha = 0.30f),
-                                                Color.White.copy(alpha = 0.05f)
-                                            )
-                                        ),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
+                                    .clip(RoundedCornerShape(8.dp))
                                     .combinedClickable(
                                         interactionSource = interactionSource,
                                         indication = androidx.compose.foundation.LocalIndication.current,
@@ -419,16 +400,17 @@ fun TileWallScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        LiquidPill(
-                            elevation = 0.dp,
-                            shape = RoundedCornerShape(12.dp)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = "${tracks.size} 首",
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -754,64 +736,35 @@ private fun TileContent(
         if (isPlaying) {
             Box(
                 modifier = Modifier
-                    .padding(6.dp)
+                    .padding(8.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF03DAC6))
                     .align(Alignment.TopEnd)
-                    .liquidGlass(
-                        shape = CircleShape,
-                        style = LiquidGlassStyle.UltraThin,
-                        tint = Color(0xFF03DAC6),
-                        elevation = 4.dp
-                    )
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(5.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF03DAC6))
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "BEATS",
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+            )
         }
 
         if (showTitle) {
-            Box(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .padding(8.dp)
                     .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .liquidGlass(
-                        shape = RoundedCornerShape(10.dp),
-                        style = LiquidGlassStyle.UltraThin,
-                        elevation = 2.dp
-                    )
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Column {
+                Text(
+                    text = track.title,
+                    color = Color.White,
+                    maxLines = if (spanHeight >= 2) 2 else 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!track.artist.isNullOrBlank() && track.artist != "<unknown>") {
                     Text(
-                        text = track.title,
-                        color = Color.White,
-                        maxLines = if (spanHeight >= 2) 2 else 1,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = track.artist,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (!track.artist.isNullOrBlank() && track.artist != "<unknown>") {
-                        Text(
-                            text = track.artist,
-                            color = Color.White.copy(alpha = 0.75f),
-                            maxLines = 1,
-                            style = MaterialTheme.typography.labelSmall,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
         }

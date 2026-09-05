@@ -277,19 +277,14 @@ fun PlayerBar(
     }
 }
 
-/** 圆形封面缩略图，外加液态玻璃光环边缘 */
+/** 圆形封面缩略图 */
 @Composable
 private fun CoverThumbnail(coverUri: android.net.Uri?, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
-            .liquidGlass(
-                shape = CircleShape,
-                style = LiquidGlassStyle.Button,
-                elevation = 4.dp,
-                borderWidth = 1.dp
-            ),
+            .background(Color.White.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
     ) {
         if (coverUri != null) {
