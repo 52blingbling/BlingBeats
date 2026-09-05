@@ -48,41 +48,105 @@ enum class LiquidGlassStyle {
  * 缓存 AGSL 着色器实例（在 Android 13+ / API 33+ 生效）
  */
 private object LiquidGlassShaderCache {
+    /**
+     * 来自 Kyant0/AndroidLiquidGlass (Backdrop) 的核心透镜折射与光谱色散着色器
+     * 包含圆角矩形 SDF 分析梯度、球透镜映射、7 波段色散叠加
+     */
     private const val AGSL_LENS_SHADER = """
         uniform shader content;
         uniform float2 size;
-        uniform float radius;
-        uniform float refraction;
-        
-        float sdRoundedRect(float2 coord, float2 halfSize, float r) {
-            float2 cornerCoord = abs(coord) - (halfSize - float2(r));
-            float outside = length(max(cornerCoord, 0.0)) - r;
+        uniform float2 offset;
+        uniform float4 cornerRadii;
+        uniform float refractionHeight;
+        uniform float refractionAmount;
+        uniform float depthEffect;
+        uniform float chromaticAberration;
+
+        float radiusAt(float2 coord, float4 radii) {
+            if (coord.x >= 0.0) {
+                if (coord.y <= 0.0) return radii.y;
+                else return radii.z;
+            } else {
+                if (coord.y <= 0.0) return radii.x;
+                else return radii.w;
+            }
+        }
+
+        float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
+            float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+            float outside = length(max(cornerCoord, 0.0)) - radius;
             float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);
             return outside + inside;
         }
-        
+
+        float2 gradSdRoundedRect(float2 coord, float2 halfSize, float radius) {
+            float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+            if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
+                return sign(coord) * normalize(max(cornerCoord, 0.0));
+            } else {
+                float gradX = step(cornerCoord.y, cornerCoord.x);
+                return sign(coord) * float2(gradX, 1.0 - gradX);
+            }
+        }
+
+        float circleMap(float x) {
+            return 1.0 - sqrt(max(1.0 - x * x, 0.0));
+        }
+
         half4 main(float2 coord) {
             float2 halfSize = size * 0.5;
-            float2 centerCoord = coord - halfSize;
-            float dist = sdRoundedRect(centerCoord, halfSize, radius);
+            float2 centeredCoord = (coord + offset) - halfSize;
+            float radius = radiusAt(coord, cornerRadii);
             
-            // 在边缘 refraction 宽度内进行透镜折射与微弱色散
-            if (dist <= 0.0 && dist > -refraction) {
-                float factor = smoothstep(-refraction, 0.0, dist);
-                float2 normal = normalize(centerCoord);
-                
-                // RGB 分色色散 (Chromatic Aberration)
-                float2 offsetR = coord - normal * (factor * 5.0);
-                float2 offsetG = coord - normal * (factor * 3.5);
-                float2 offsetB = coord - normal * (factor * 2.0);
-                
-                half4 cR = content.eval(offsetR);
-                half4 cG = content.eval(offsetG);
-                half4 cB = content.eval(offsetB);
-                
-                return half4(cR.r, cG.g, cB.b, (cR.a + cG.a + cB.a) * 0.3333);
+            float sd = sdRoundedRect(centeredCoord, halfSize, radius);
+            if (-sd >= refractionHeight) {
+                return content.eval(coord);
             }
-            return content.eval(coord);
+            sd = min(sd, 0.0);
+            
+            float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
+            float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+            float2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius) + depthEffect * normalize(centeredCoord));
+            
+            float2 refractedCoord = coord + d * grad;
+            float dispersionIntensity = chromaticAberration * ((centeredCoord.x * centeredCoord.y) / max(halfSize.x * halfSize.y, 1.0));
+            float2 dispersedCoord = d * grad * dispersionIntensity;
+            
+            half4 color = half4(0.0);
+            
+            half4 red = content.eval(refractedCoord + dispersedCoord);
+            color.r += red.r / 3.5;
+            color.a += red.a / 7.0;
+            
+            half4 orange = content.eval(refractedCoord + dispersedCoord * (2.0 / 3.0));
+            color.r += orange.r / 3.5;
+            color.g += orange.g / 7.0;
+            color.a += orange.a / 7.0;
+            
+            half4 yellow = content.eval(refractedCoord + dispersedCoord * (1.0 / 3.0));
+            color.r += yellow.r / 3.5;
+            color.g += yellow.g / 3.5;
+            color.a += yellow.a / 7.0;
+            
+            half4 green = content.eval(refractedCoord);
+            color.g += green.g / 3.5;
+            color.a += green.a / 7.0;
+            
+            half4 cyan = content.eval(refractedCoord - dispersedCoord * (1.0 / 3.0));
+            color.g += cyan.g / 3.5;
+            color.b += cyan.b / 3.0;
+            color.a += cyan.a / 7.0;
+            
+            half4 blue = content.eval(refractedCoord - dispersedCoord * (2.0 / 3.0));
+            color.b += blue.b / 3.0;
+            color.a += blue.a / 7.0;
+            
+            half4 purple = content.eval(refractedCoord - dispersedCoord);
+            color.r += purple.r / 7.0;
+            color.b += purple.b / 3.0;
+            color.a += purple.a / 7.0;
+            
+            return color;
         }
     """
 
@@ -182,18 +246,23 @@ fun Modifier.liquidGlass(
             this.shape = shape
             clip = false
 
-            // Android 13+ (API 33+) 凸透镜折射着色器
+            // Android 13+ (API 33+) 凸透镜折射与色散着色器 (Kyant0 核心算法)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 LiquidGlassShaderCache.shader?.let { s ->
                     try {
                         s.setFloatUniform("size", size.width, size.height)
+                        s.setFloatUniform("offset", 0f, 0f)
                         val r = when (shape) {
                             CircleShape -> size.minDimension * 0.5f
-                            is RoundedCornerShape -> 24.dp.toPx()
-                            else -> 16.dp.toPx()
+                            is RoundedCornerShape -> 24.dp.toPx().coerceAtMost(size.minDimension * 0.5f)
+                            else -> 16.dp.toPx().coerceAtMost(size.minDimension * 0.5f)
                         }
-                        s.setFloatUniform("radius", r)
-                        s.setFloatUniform("refraction", 16.dp.toPx().coerceAtMost(size.minDimension * 0.3f))
+                        s.setFloatUniform("cornerRadii", r, r, r, r)
+                        val refHeight = 18.dp.toPx().coerceAtMost(size.minDimension * 0.35f)
+                        s.setFloatUniform("refractionHeight", refHeight)
+                        s.setFloatUniform("refractionAmount", -refHeight * 0.85f)
+                        s.setFloatUniform("depthEffect", 0.35f)
+                        s.setFloatUniform("chromaticAberration", 1.0f)
                         renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(s, "content").asComposeRenderEffect()
                     } catch (e: Throwable) {}
                 }

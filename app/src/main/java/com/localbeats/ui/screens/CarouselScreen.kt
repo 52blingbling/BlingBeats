@@ -102,7 +102,7 @@ fun CarouselScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val screenHeightDp = configuration.screenHeightDp.dp
-    val frameSize = (screenHeightDp * 0.82f).coerceAtMost(340.dp).coerceAtLeast(180.dp)
+    val frameSize = (screenHeightDp * 0.54f).coerceAtMost(220.dp).coerceAtLeast(150.dp)
     val gapDp = 12.dp
 
     val framePx = with(density) { frameSize.toPx() }
@@ -385,13 +385,12 @@ fun CarouselScreen(
                         )
                     )
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    // top padding bumped to 24dp so title clears the sprocket hole strip
-                    .padding(top = 24.dp, bottom = 6.dp)
+                    .padding(top = 8.dp, bottom = 4.dp)
             ) {
                 Text(
                     text = currentTrack?.title ?: "",
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -408,8 +407,8 @@ fun CarouselScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 26.dp)
-                        .padding(horizontal = 32.dp),
+                        .padding(bottom = 12.dp)
+                        .padding(horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -417,10 +416,10 @@ fun CarouselScreen(
                             .liquidGlass(
                                 shape = RoundedCornerShape(18.dp),
                                 style = LiquidGlassStyle.UltraThin,
-                                tint = rawBgColor.copy(alpha = 0.2f),
-                                elevation = 6.dp
+                                tint = Color.Unspecified,
+                                elevation = 4.dp
                             )
-                            .padding(horizontal = 24.dp, vertical = 10.dp)
+                            .padding(horizontal = 20.dp, vertical = 7.dp)
                     ) {
                         AnimatedContent(
                             targetState = lyricText,
@@ -434,7 +433,7 @@ fun CarouselScreen(
                             Text(
                                 text = line,
                                 color = Color.White.copy(alpha = 0.95f),
-                                fontSize = 15.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
@@ -446,15 +445,15 @@ fun CarouselScreen(
                 }
             }
 
-            // ── Compact PlayerBar (bottom-left corner) ────────────────────────
+            // ── Compact PlayerBar (top-left corner) ────────────────────────
             AnimatedVisibility(
                 visible = controlsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(start = 12.dp, top = 26.dp)
+                    .padding(start = 12.dp, top = 8.dp)
             ) {
                 PlayerBar(
                     title = currentTrack?.title ?: "未选择歌曲",
@@ -469,7 +468,6 @@ fun CarouselScreen(
                     duration = duration,
                     onSeek = onSeek,
                     compact = true,
-                    glassTint = rawBgColor.copy(alpha = 0.35f),
                     onOrientationToggleClick = onOrientationToggleClick
                 )
             }

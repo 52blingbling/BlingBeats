@@ -86,10 +86,10 @@ fun PlayerBar(
     glassTint: Color = Color.Unspecified,
     modifier: Modifier = Modifier
 ) {
-    val horizontalPadding = if (compact) 24.dp else 16.dp
+    val horizontalPadding = if (compact) 0.dp else 16.dp
     val widthModifier = if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth()
-    val barHeight = if (compact) 58.dp else 66.dp
-    val thumbSize = if (compact) 42.dp else 50.dp
+    val barHeight = if (compact) 52.dp else 64.dp
+    val thumbSize = if (compact) 38.dp else 48.dp
 
     // 歌词解析
     val parsedLyrics = remember(lyrics) { LyricsParser.parse(lyrics) }
@@ -106,27 +106,22 @@ fun PlayerBar(
         else -> null
     }
 
-    // 进度比例
-    val progressFraction = if (duration > 0L) {
-        (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
     Box(
         modifier = modifier
             .then(widthModifier)
             .padding(horizontal = horizontalPadding)
-            .padding(bottom = 12.dp)
-            .navigationBarsPadding()
+            .padding(bottom = if (compact) 0.dp else 12.dp)
+            .then(if (compact) Modifier else Modifier.navigationBarsPadding())
     ) {
         Box(
             modifier = Modifier
-                .then(if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
+                .then(widthModifier)
                 .height(barHeight)
                 .liquidGlass(
                     shape = CircleShape,
                     style = LiquidGlassStyle.Pill,
-                    tint = glassTint,
-                    elevation = 20.dp,
+                    tint = Color.Unspecified,
+                    elevation = if (compact) 10.dp else 20.dp,
                     borderWidth = 1.dp
                 )
                 .clickable(
@@ -135,35 +130,10 @@ fun PlayerBar(
                     onClick = {} // 拦截点击穿透
                 )
         ) {
-            // 胶囊底部嵌入式光纤微光进度条
-            if (duration > 0L) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.5.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(Color.White.copy(alpha = 0.08f))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(progressFraction)
-                            .height(2.5.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                        MaterialTheme.colorScheme.primary,
-                                        Color.White.copy(alpha = 0.9f)
-                                    )
-                                )
-                            )
-                    )
-                }
-            }
 
             Row(
                 modifier = (if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 4.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (!compact) {
@@ -253,21 +223,21 @@ fun PlayerBar(
                         LiquidIconButton(
                             icon = Icons.Filled.ScreenRotation,
                             onClick = onOrientationToggleClick,
-                            size = 38.dp,
+                            size = if (compact) 36.dp else 38.dp,
                             iconSize = 18.dp,
                             contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
                             contentDescription = "Toggle Orientation"
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(if (compact) 6.dp else 10.dp))
                     }
 
                     // 播放/暂停按钮：液态透镜图标按钮
                     LiquidIconButton(
                         icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         onClick = onPlayPauseClick,
-                        size = 46.dp,
-                        iconSize = 26.dp,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        size = if (compact) 40.dp else 46.dp,
+                        iconSize = if (compact) 22.dp else 26.dp,
+                        tint = Color.Unspecified,
                         contentColor = MaterialTheme.colorScheme.primary,
                         contentDescription = if (isPlaying) "Pause" else "Play"
                     )

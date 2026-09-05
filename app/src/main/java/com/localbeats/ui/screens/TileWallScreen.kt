@@ -296,7 +296,7 @@ fun TileWallScreen(
                                         val isVisible = !(drawX + tileW < 0 || drawX > containerWidth || drawY + tileH < 0 || drawY > containerHeight)
                                         alpha = if (isVisible) 1f else 0f
                                     }
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(0.dp))
                                     .combinedClickable(
                                         interactionSource = interactionSource,
                                         indication = androidx.compose.foundation.LocalIndication.current,
@@ -587,7 +587,6 @@ fun TileWallScreen(
             duration = duration,
             onSeek = onSeek,
             onOrientationToggleClick = onOrientationToggleClick,
-            glassTint = currentPalette[0].copy(alpha = 0.25f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onGloballyPositioned { coords ->
