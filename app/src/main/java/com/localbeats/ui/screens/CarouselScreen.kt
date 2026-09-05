@@ -59,8 +59,12 @@ import androidx.compose.ui.unit.sp
 import androidx.palette.graphics.Palette
 import com.localbeats.data.lyrics.LyricsParser
 import com.localbeats.data.model.MusicTrack
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.localbeats.ui.components.CarouselItem
 import com.localbeats.ui.components.PlayerBar
+import com.localbeats.ui.glass.LiquidGlassStyle
+import com.localbeats.ui.glass.liquidGlass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -371,67 +375,77 @@ fun CarouselScreen(
                 }
             }
 
-            // ── Song title (top, near screen edge) ────────────────────────────
+            // ── Song title (top floating liquid glass pill) ───────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
-                        )
-                    )
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    // top padding bumped to 24dp so title clears the sprocket hole strip
-                    .padding(top = 24.dp, bottom = 6.dp)
+                    .padding(top = 28.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = currentTrack?.title ?: "",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 32.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                        .liquidGlass(
+                            shape = CircleShape,
+                            style = LiquidGlassStyle.Pill,
+                            tint = rawBgColor.copy(alpha = 0.25f),
+                            elevation = 8.dp
+                        )
+                        .padding(horizontal = 22.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = currentTrack?.title ?: "",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
-            // ── Synced lyrics (bottom, near screen edge) ──────────────────────
+            // ── Synced lyrics (bottom floating liquid glass card) ─────────────
             val lyricText = currentLyricText
             if (lyricText != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
-                            )
-                        )
-                        .padding(bottom = 16.dp, top = 10.dp)
-                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 26.dp)
+                        .padding(horizontal = 32.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    AnimatedContent(
-                        targetState = lyricText,
-                        transitionSpec = {
-                            (slideInVertically { it / 2 } + fadeIn(tween(200)))
-                                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
-                        },
-                        label = "lyric_line",
-                        modifier = Modifier.align(Alignment.Center)
-                    ) { line ->
-                        Text(
-                            text = line,
-                            color = Color.White.copy(alpha = 0.88f),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
-                        )
+                    Box(
+                        modifier = Modifier
+                            .liquidGlass(
+                                shape = RoundedCornerShape(18.dp),
+                                style = LiquidGlassStyle.UltraThin,
+                                tint = rawBgColor.copy(alpha = 0.2f),
+                                elevation = 6.dp
+                            )
+                            .padding(horizontal = 24.dp, vertical = 10.dp)
+                    ) {
+                        AnimatedContent(
+                            targetState = lyricText,
+                            transitionSpec = {
+                                (slideInVertically { it / 2 } + fadeIn(tween(200)))
+                                    .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(200)))
+                            },
+                            label = "lyric_line",
+                            modifier = Modifier.align(Alignment.Center)
+                        ) { line ->
+                            Text(
+                                text = line,
+                                color = Color.White.copy(alpha = 0.95f),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.basicMarquee(velocity = 35.dp, delayMillis = 600)
+                            )
+                        }
                     }
                 }
             }
@@ -444,7 +458,7 @@ fun CarouselScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(start = 12.dp, top = 28.dp)
+                    .padding(start = 12.dp, top = 26.dp)
             ) {
                 PlayerBar(
                     title = currentTrack?.title ?: "未选择歌曲",
@@ -459,6 +473,7 @@ fun CarouselScreen(
                     duration = duration,
                     onSeek = onSeek,
                     compact = true,
+                    glassTint = rawBgColor.copy(alpha = 0.35f),
                     onOrientationToggleClick = onOrientationToggleClick
                 )
             }

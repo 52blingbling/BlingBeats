@@ -87,6 +87,11 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.localbeats.ui.components.PlayerBar
 import com.localbeats.ui.components.placeholderPalettes
+import com.localbeats.ui.glass.LiquidGlassStyle
+import com.localbeats.ui.glass.LiquidIconButton
+import com.localbeats.ui.glass.LiquidPill
+import com.localbeats.ui.glass.LiquidAmbientBackground
+import com.localbeats.ui.glass.liquidGlass
 import com.localbeats.data.model.MusicTrack
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -200,6 +205,11 @@ fun TileWallScreen(
 
     val currentOnTrackClick by rememberUpdatedState(onTrackClick)
 
+    val currentPalette = remember(currentTrack?.id) {
+        val idx = currentTrack?.id?.let { ((it % placeholderPalettes.size) + placeholderPalettes.size) % placeholderPalettes.size } ?: 0L
+        placeholderPalettes[idx.toInt()]
+    }
+
     val visibleTracks = displayTracks
 
     Box(
@@ -233,6 +243,13 @@ fun TileWallScreen(
                 )
             }
     ) {
+        // 底层液态流光漫反射背景
+        LiquidAmbientBackground(
+            primaryColor = currentPalette[0],
+            secondaryColor = currentPalette[1],
+            tertiaryColor = currentPalette.getOrNull(2) ?: currentPalette[0]
+        )
+
         androidx.compose.ui.layout.Layout(
             content = {
                 // 渲染 4 份拷贝 (2x2) 以在无限滑动时无缝衔接
@@ -288,7 +305,17 @@ fun TileWallScreen(
                                         val isVisible = !(drawX + tileW < 0 || drawX > containerWidth || drawY + tileH < 0 || drawY > containerHeight)
                                         alpha = if (isVisible) 1f else 0f
                                     }
-                                    .clip(RoundedCornerShape(0.dp))
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = 0.6.dp,
+                                        brush = Brush.linearGradient(
+                                            listOf(
+                                                Color.White.copy(alpha = 0.30f),
+                                                Color.White.copy(alpha = 0.05f)
+                                            )
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
                                     .combinedClickable(
                                         interactionSource = interactionSource,
                                         indication = androidx.compose.foundation.LocalIndication.current,
@@ -359,59 +386,64 @@ fun TileWallScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 顶部浮层标题栏
+        // 顶部浮动液态玻璃控制栏
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            androidx.compose.material3.MaterialTheme.colorScheme.background,
-                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.9f),
-                            androidx.compose.material3.MaterialTheme.colorScheme.background.copy(alpha = 0.3f),
-                            Color.Transparent
-                        )
-                    )
-                )
                 .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
                 .onGloballyPositioned { coords ->
                     topInsetPx = coords.size.height.toFloat()
                 }
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "BlingBeats",
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "${tracks.size} 首",
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                        fontSize = 13.sp
+                    .liquidGlass(
+                        shape = CircleShape,
+                        style = LiquidGlassStyle.Pill,
+                        elevation = 12.dp
                     )
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = "设置",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onBackground
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "BlingBeats",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        LiquidPill(
+                            elevation = 0.dp,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "${tracks.size} 首",
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
-
                     }
+                    LiquidIconButton(
+                        icon = Icons.Filled.Settings,
+                        onClick = { menuExpanded = true },
+                        size = 36.dp,
+                        iconSize = 20.dp,
+                        contentDescription = "设置"
+                    )
                 }
             }
         }
 
-        // Invisible overlay to dismiss menu when clicking outside
+        // 点击外部关闭设置菜单蒙层
         if (menuExpanded) {
             Box(
                 modifier = Modifier
@@ -424,7 +456,7 @@ fun TileWallScreen(
             )
         }
 
-        // Liquid Glass Menu Overlay
+        // Liquid Glass 设置菜单浮窗
         androidx.compose.animation.AnimatedVisibility(
             visible = menuExpanded,
             enter = androidx.compose.animation.scaleIn(
@@ -440,31 +472,15 @@ fun TileWallScreen(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 56.dp, end = 16.dp)
+                .padding(top = 64.dp, end = 16.dp)
         ) {
-            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-            val actualDark = currentThemeMode == 2 || (currentThemeMode == 0 && isDark)
-            
-            val glassBg = if (actualDark) androidx.compose.ui.graphics.Color(0xD91E1E1E) else androidx.compose.ui.graphics.Color(0xE6FFFFFF)
-            val glassBorder1 = androidx.compose.ui.graphics.Color.White.copy(alpha = if (actualDark) 0.15f else 0.8f)
-            val glassBorder2 = androidx.compose.ui.graphics.Color.White.copy(alpha = if (actualDark) 0.02f else 0.2f)
-
             Column(
                 modifier = Modifier
-                    .width(200.dp)
-                    .shadow(24.dp, RoundedCornerShape(20.dp), spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f))
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                            colors = listOf(glassBg, glassBg.copy(alpha = glassBg.alpha * 0.9f))
-                        )
-                    )
-                    .border(
-                        1.dp,
-                        androidx.compose.ui.graphics.Brush.linearGradient(
-                            colors = listOf(glassBorder1, glassBorder2)
-                        ),
-                        RoundedCornerShape(20.dp)
+                    .width(220.dp)
+                    .liquidGlass(
+                        shape = RoundedCornerShape(22.dp),
+                        style = LiquidGlassStyle.Card,
+                        elevation = 20.dp
                     )
                     .padding(8.dp)
             ) {
@@ -589,6 +605,7 @@ fun TileWallScreen(
             duration = duration,
             onSeek = onSeek,
             onOrientationToggleClick = onOrientationToggleClick,
+            glassTint = currentPalette[0].copy(alpha = 0.25f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onGloballyPositioned { coords ->
@@ -737,35 +754,64 @@ private fun TileContent(
         if (isPlaying) {
             Box(
                 modifier = Modifier
-                    .padding(8.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF03DAC6))
+                    .padding(6.dp)
                     .align(Alignment.TopEnd)
-            )
+                    .liquidGlass(
+                        shape = CircleShape,
+                        style = LiquidGlassStyle.UltraThin,
+                        tint = Color(0xFF03DAC6),
+                        elevation = 4.dp
+                    )
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF03DAC6))
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "BEATS",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         if (showTitle) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .padding(8.dp)
+                    .fillMaxWidth()
                     .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .liquidGlass(
+                        shape = RoundedCornerShape(10.dp),
+                        style = LiquidGlassStyle.UltraThin,
+                        elevation = 2.dp
+                    )
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Text(
-                    text = track.title,
-                    color = Color.White,
-                    maxLines = if (spanHeight >= 2) 2 else 1,
-                    style = MaterialTheme.typography.bodySmall,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!track.artist.isNullOrBlank() && track.artist != "<unknown>") {
+                Column {
                     Text(
-                        text = track.artist,
-                        color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        style = MaterialTheme.typography.labelSmall,
+                        text = track.title,
+                        color = Color.White,
+                        maxLines = if (spanHeight >= 2) 2 else 1,
+                        style = MaterialTheme.typography.bodySmall,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (!track.artist.isNullOrBlank() && track.artist != "<unknown>") {
+                        Text(
+                            text = track.artist,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

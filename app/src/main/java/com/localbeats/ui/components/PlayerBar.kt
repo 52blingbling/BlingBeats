@@ -30,21 +30,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -57,13 +55,17 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.localbeats.data.lyrics.LyricsParser
+import com.localbeats.ui.glass.LiquidGlassStyle
+import com.localbeats.ui.glass.LiquidIconButton
+import com.localbeats.ui.glass.liquidGlass
 
 /**
- * 苹果风格长胶囊液态玻璃播放栏：
- * - 胶囊形状（圆角等于高度一半，形成 pill）
- * - 液态玻璃质感（半透明渐变 + 顶部高光 + 阴影）
- * - 左侧：封面缩略图 + 歌曲标题 + 歌词行（LRC 同步显示当前行；纯文本滚动；无歌词回退到艺术家）
- * - 右侧：仅播放/暂停按钮
+ * 苹果 / AndroidLiquidGlass 风格悬浮长胶囊液态玻璃播放栏：
+ * - 纯正液态透镜折射（SDF 凹凸透镜 + 色散）
+ * - 高透磨砂质感 + 镜面边缘渐变高光 + 悬浮环境软阴影
+ * - 左侧：封面缩略图 + 标题跑马灯 + 实时歌词/艺术家
+ * - 右侧：液态玻璃旋转与播放/暂停控制按钮
+ * - 底部：嵌入式光纤微光播放进度条
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -81,32 +83,33 @@ fun PlayerBar(
     lyrics: String? = null,
     compact: Boolean = false,
     onOrientationToggleClick: (() -> Unit)? = null,
+    glassTint: Color = Color.Unspecified,
     modifier: Modifier = Modifier
 ) {
-    // 胶囊形状：圆角设为很大的值，配合高度形成 pill
-    val pillShape = RoundedCornerShape(50)
-    // compact 模式：横屏下让胶囊变短（宽度收窄），更精致
     val horizontalPadding = if (compact) 24.dp else 16.dp
-    // compact 模式：横屏下不占满宽度，收窄居中显示，更加沉浸
     val widthModifier = if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth()
-    val barHeight = if (compact) 56.dp else 64.dp
-    val thumbSize = if (compact) 40.dp else 48.dp
+    val barHeight = if (compact) 58.dp else 66.dp
+    val thumbSize = if (compact) 42.dp else 50.dp
 
-    // 解析歌词：LRC 格式可按播放进度同步显示当前行；纯文本则整段滚动
+    // 歌词解析
     val parsedLyrics = remember(lyrics) { LyricsParser.parse(lyrics) }
     val isSynced = LyricsParser.isSyncedLyrics(parsedLyrics)
-    // LRC 同步模式：定位当前行；若处于第一行之前的前奏，回退显示第一行（避免空白）
+    val currentPosition = currentPositionProvider()
     val currentLyricIndex = if (isSynced) {
-        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPositionProvider() + 300L)
+        val idx = LyricsParser.currentLineIndex(parsedLyrics, currentPosition + 300L)
         if (idx < 0) 0 else idx
     } else -1
     val currentLyricText = when {
         isSynced && currentLyricIndex in parsedLyrics.indices -> parsedLyrics[currentLyricIndex].text
         !isSynced && parsedLyrics.isNotEmpty() ->
-            // 纯文本歌词：拼接为一行整段滚动
             parsedLyrics.joinToString("  ·  ") { it.text }
         else -> null
     }
+
+    // 进度比例
+    val progressFraction = if (duration > 0L) {
+        (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    } else 0f
 
     Box(
         modifier = modifier
@@ -119,43 +122,44 @@ fun PlayerBar(
             modifier = Modifier
                 .then(if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
                 .height(barHeight)
-                .clip(pillShape)
+                .liquidGlass(
+                    shape = CircleShape,
+                    style = LiquidGlassStyle.Pill,
+                    tint = glassTint,
+                    elevation = 20.dp,
+                    borderWidth = 1.dp
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {} // 拦截点击，防止穿透到下方的磁贴
-                )
-                .shadow(
-                    elevation = 20.dp,
-                    shape = pillShape,
-                    ambientColor = Color.Black.copy(alpha = 0.5f),
-                    spotColor = Color.Black.copy(alpha = 0.5f)
-                )
-                .background(
-                    // 真实的 iOS 动态液态玻璃：亮色模式为半透明白，暗色模式为半透明深色
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                            androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
-                        )
-                    )
-                )
-                // 模拟 iOS 玻璃高光描边：左上角偏白，右下角偏暗/透明
-                .border(
-                    width = 0.5.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.35f),
-                            Color.White.copy(alpha = 0.05f),
-                            Color.White.copy(alpha = 0.01f),
-                            Color.White.copy(alpha = 0.1f) // 右下角轻微反光
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                    ),
-                    shape = pillShape
+                    onClick = {} // 拦截点击穿透
                 )
         ) {
+            // 胶囊底部嵌入式光纤微光进度条
+            if (duration > 0L) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(Color.White.copy(alpha = 0.08f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progressFraction)
+                            .height(2.5.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                        MaterialTheme.colorScheme.primary,
+                                        Color.White.copy(alpha = 0.9f)
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
 
             Row(
                 modifier = (if (compact) Modifier.wrapContentWidth() else Modifier.fillMaxWidth())
@@ -163,7 +167,7 @@ fun PlayerBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (!compact) {
-                    // 左侧：封面缩略图
+                    // 左侧：封面缩略图（带液态玻璃边框）
                     AnimatedContent(
                         targetState = coverUri,
                         transitionSpec = {
@@ -192,11 +196,10 @@ fun PlayerBar(
                         ) { animatedTitle ->
                             Text(
                                 text = animatedTitle,
-                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                // 标题超长时 marquee 滚动
                                 modifier = Modifier.basicMarquee(
                                     velocity = 40.dp,
                                     delayMillis = 800
@@ -216,11 +219,10 @@ fun PlayerBar(
                             ) { line ->
                                 Text(
                                     text = line,
-                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Normal,
                                     maxLines = 1,
-                                    // 同步和非同步歌词都统一加上 basicMarquee，如果长度超过容器，它会自动滚动显示，否则静止。
                                     modifier = Modifier.basicMarquee(
                                         velocity = 35.dp,
                                         delayMillis = 600
@@ -230,7 +232,7 @@ fun PlayerBar(
                         } else if (!artist.isNullOrBlank()) {
                             Text(
                                 text = artist,
-                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Normal,
                                 maxLines = 1,
@@ -242,109 +244,52 @@ fun PlayerBar(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                // 右侧：播放/暂停按钮 及 旋转按钮
+                // 右侧：播放/暂停按钮及旋转按钮
                 Row(
                     horizontalArrangement = if (compact) Arrangement.Center else Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (onOrientationToggleClick != null) {
-                        // 旋转按鈕：液态玻璃风格
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
-                                            androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-                                        )
-                                    )
-                                )
-                                .border(
-                                    width = 0.5.dp,
-                                    brush = Brush.verticalGradient(
-                                        listOf(
-                                            Color.White.copy(alpha = 0.45f),
-                                            Color.White.copy(alpha = 0.05f)
-                                        )
-                                    ),
-                                    shape = CircleShape
-                                )
-                                .clickable(onClick = onOrientationToggleClick),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ScreenRotation,
-                                contentDescription = "Toggle Orientation",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        LiquidIconButton(
+                            icon = Icons.Filled.ScreenRotation,
+                            onClick = onOrientationToggleClick,
+                            size = 38.dp,
+                            iconSize = 18.dp,
+                            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
+                            contentDescription = "Toggle Orientation"
+                        )
                         Spacer(modifier = Modifier.width(10.dp))
                     }
 
-                    // 播放/暂停按鈕：苹果液态玻璃风格
-                    // 半透明磨砂玻璃背景 + 顶部高光渐变 + 描边 + 主色图标
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f),
-                                        androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
-                                    )
-                                )
-                            )
-                            .border(
-                                width = 0.8.dp,
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.55f),
-                                        Color.White.copy(alpha = 0.08f)
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = onPlayPauseClick
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AnimatedContent(
-                            targetState = isPlaying,
-                            transitionSpec = {
-                                (scaleIn(tween(120)) + fadeIn(tween(120)))
-                                    .togetherWith(scaleOut(tween(120)) + fadeOut(tween(120)))
-                            },
-                            label = "play_pause"
-                        ) { playing ->
-                            Icon(
-                                imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (playing) "Pause" else "Play",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
+                    // 播放/暂停按钮：液态透镜图标按钮
+                    LiquidIconButton(
+                        icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        onClick = onPlayPauseClick,
+                        size = 46.dp,
+                        iconSize = 26.dp,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        contentDescription = if (isPlaying) "Pause" else "Play"
+                    )
                 }
             }
         }
     }
 }
 
-/** 圆形封面缩略图，无封面时显示音符占位 */
+/** 圆形封面缩略图，外加液态玻璃光环边缘 */
 @Composable
 private fun CoverThumbnail(coverUri: android.net.Uri?, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.12f)),
+            .liquidGlass(
+                shape = CircleShape,
+                style = LiquidGlassStyle.Button,
+                elevation = 4.dp,
+                borderWidth = 1.dp
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (coverUri != null) {
@@ -361,7 +306,7 @@ private fun CoverThumbnail(coverUri: android.net.Uri?, size: Dp) {
             Icon(
                 imageVector = Icons.Filled.MusicNote,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.6f),
+                tint = Color.White.copy(alpha = 0.65f),
                 modifier = Modifier.size(24.dp)
             )
         }

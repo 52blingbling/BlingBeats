@@ -84,6 +84,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.localbeats.ui.screens.CarouselScreen
 import com.localbeats.ui.screens.TileWallScreen
+import com.localbeats.ui.glass.LiquidGlassStyle
+import com.localbeats.ui.glass.LiquidButton
+import com.localbeats.ui.glass.LiquidIconButton
+import com.localbeats.ui.glass.LiquidCard
+import com.localbeats.ui.glass.LiquidAmbientBackground
+import com.localbeats.ui.glass.liquidGlass
 import com.localbeats.ui.theme.LocalBeatsTheme
 import com.localbeats.viewmodel.MusicViewModel
 
@@ -319,26 +325,44 @@ fun MusicApp(
                     .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    androidx.compose.animation.AnimatedContent(
-                        targetState = loadingMessages[messageIndex],
-                        transitionSpec = {
-                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300))
-                        },
-                        label = "ai_loading_text"
-                    ) { msg ->
-                        Text(
-                            text = msg,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                            fontSize = 14.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                LiquidAmbientBackground(
+                    primaryColor = Color(0xFF6A1B9A),
+                    secondaryColor = Color(0xFF1565C0),
+                    tertiaryColor = Color(0xFF00838F)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 32.dp)
+                        .liquidGlass(
+                            shape = RoundedCornerShape(28.dp),
+                            style = LiquidGlassStyle.Card,
+                            elevation = 16.dp
                         )
+                        .padding(horizontal = 32.dp, vertical = 28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        androidx.compose.animation.AnimatedContent(
+                            targetState = loadingMessages[messageIndex],
+                            transitionSpec = {
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300))
+                            },
+                            label = "ai_loading_text"
+                        ) { msg ->
+                            Text(
+                                text = msg,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                fontSize = 14.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
                     }
                 }
             }
@@ -388,44 +412,15 @@ fun MusicApp(
 fun WelcomeScreen(onScanMusic: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
 
-    // 背景光晕动画
-    val haloScale by infiniteTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "halo"
-    )
-    val haloAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "halo_alpha"
-    )
-
     // 图标脉冲
     val iconPulse by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = 1.08f,
+        targetValue = 1.06f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(1400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "icon_pulse"
-    )
-
-    // 按钮交互
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val buttonScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = tween(100),
-        label = "btn_scale"
     )
 
     // 内容淡入
@@ -438,42 +433,14 @@ fun WelcomeScreen(onScanMusic: () -> Unit) {
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
-        // 背景光晕
-        Box(
-            modifier = Modifier
-                .size(320.dp)
-                .scale(haloScale)
-                .alpha(haloAlpha)
-                .blur(80.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF6A1B9A).copy(alpha = 0.6f),
-                            Color(0xFF1565C0).copy(alpha = 0.3f),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-        Box(
-            modifier = Modifier
-                .size(200.dp)
-                .scale(1.1f - haloScale * 0.05f)
-                .alpha(haloAlpha * 0.8f)
-                .blur(60.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF03DAC6).copy(alpha = 0.4f),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
+        // 底层液态流光漫反射背景
+        LiquidAmbientBackground(
+            primaryColor = Color(0xFF7C4DFF),
+            secondaryColor = Color(0xFF03DAC6),
+            tertiaryColor = Color(0xFF1565C0)
         )
 
-        // 主内容
+        // 居中液态玻璃卡片面板
         AnimatedVisibility(
             visible = visible,
             enter = slideInVertically(
@@ -482,101 +449,97 @@ fun WelcomeScreen(onScanMusic: () -> Unit) {
             ) + fadeIn(tween(600)),
             exit = slideOutVertically() + fadeOut()
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(horizontal = 40.dp)
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 28.dp)
+                    .liquidGlass(
+                        shape = RoundedCornerShape(32.dp),
+                        style = LiquidGlassStyle.Card,
+                        elevation = 24.dp
+                    )
+                    .padding(horizontal = 28.dp, vertical = 36.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // 图标容器
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .scale(iconPulse)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // 图标容器带液态透镜边框
+                    Box(
+                        modifier = Modifier
+                            .size(90.dp)
+                            .scale(iconPulse)
+                            .liquidGlass(
+                                shape = RoundedCornerShape(26.dp),
+                                style = LiquidGlassStyle.Button,
+                                tint = Color(0xFFBB86FC).copy(alpha = 0.35f),
+                                elevation = 12.dp
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.FolderOpen,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(46.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(26.dp))
+
+                    Text(
+                        text = "BlingBeats",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        style = androidx.compose.ui.text.TextStyle(
                             brush = Brush.linearGradient(
                                 colors = listOf(Color(0xFFBB86FC), Color(0xFF03DAC6))
                             )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.FolderOpen,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(52.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Text(
-                    text = "BlingBeats",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    style = androidx.compose.ui.text.TextStyle(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFFBB86FC), Color(0xFF03DAC6))
                         )
                     )
-                )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                Text(
-                    text = "你的本地音乐播放器",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "把耳机里的世界，变成眼前的风景",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 20.sp
-                )
-
-                Spacer(modifier = Modifier.height(40.dp))
-
-                // 选择文件夹按钮
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .scale(buttonScale)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(Color(0xFFBB86FC), Color(0xFF7C4DFF))
-                            )
-                        )
-                        .clickable(
-                            interactionSource = interactionSource,
-                            indication = null,
-                            onClick = onScanMusic
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
                     Text(
-                        text = "扫描本地音乐",
-                        color = Color.White,
+                        text = "你的本地音乐播放器",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "把耳机里的世界，变成眼前的风景",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // 扫描本地音乐液态按钮
+                    LiquidButton(
+                        text = "扫描本地音乐",
+                        icon = Icons.Filled.FolderOpen,
+                        onClick = onScanMusic,
+                        tint = Color(0xFF7C4DFF).copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "支持 MP3 · M4A · FLAC · WAV · OGG · AAC",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "支持 MP3 · M4A · FLAC · WAV · OGG · AAC",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f),
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center
-                )
             }
         }
     }
@@ -608,20 +571,21 @@ fun FolderSelectionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置与扫描文件夹", color = MaterialTheme.colorScheme.onBackground) },
+                title = { Text("设置与扫描文件夹", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     if (onBack != null) {
-                        androidx.compose.material3.IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
-                                contentDescription = "返回",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
+                        LiquidIconButton(
+                            icon = androidx.compose.material.icons.Icons.Filled.ArrowBack,
+                            onClick = onBack,
+                            size = 40.dp,
+                            iconSize = 22.dp,
+                            modifier = Modifier.padding(start = 8.dp),
+                            contentDescription = "返回"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = Color.Transparent
                 )
             )
         },
@@ -629,20 +593,17 @@ fun FolderSelectionScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
                     .padding(16.dp)
             ) {
-                Box(
+                LiquidButton(
+                    text = "完成设置",
+                    onClick = { onConfirm(ignoredFolders, filterShortAudio) },
+                    shape = RoundedCornerShape(18.dp),
+                    tint = Color(0xFFBB86FC).copy(alpha = 0.45f),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFFBB86FC))
-                        .clickable { onConfirm(ignoredFolders, filterShortAudio) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("完成", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
+                )
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -658,63 +619,80 @@ fun FolderSelectionScreen(
                     .padding(padding)
             ) {
                 item {
-                    // (Theme selection removed from here)
-                    
-                    
-                    // 过滤短音频
-                    Row(
+                    // 过滤短音频液态玻璃卡片
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { filterShortAudio = !filterShortAudio }
-                            .padding(horizontal = 16.dp, vertical = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(text = "过滤短音频", color = MaterialTheme.colorScheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                            Text(text = "不展示 60 秒以下的音频文件", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp)
-                        }
-                        androidx.compose.material3.Switch(
-                            checked = filterShortAudio,
-                            onCheckedChange = { filterShortAudio = it },
-                            colors = androidx.compose.material3.SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFFBB86FC),
-                                checkedTrackColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .liquidGlass(
+                                shape = RoundedCornerShape(18.dp),
+                                style = LiquidGlassStyle.Card,
+                                elevation = 4.dp
                             )
-                        )
+                            .clickable { filterShortAudio = !filterShortAudio }
+                            .padding(horizontal = 18.dp, vertical = 18.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(text = "过滤短音频", color = MaterialTheme.colorScheme.onBackground, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = "不展示 60 秒以下的音频文件", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp)
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = filterShortAudio,
+                                onCheckedChange = { filterShortAudio = it },
+                                colors = androidx.compose.material3.SwitchDefaults.colors(
+                                    checkedThumbColor = Color(0xFFBB86FC),
+                                    checkedTrackColor = Color(0xFFBB86FC).copy(alpha = 0.5f)
+                                )
+                            )
+                        }
                     }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
                 items(folders) { folder ->
                     val isChecked = !ignoredFolders.contains(folder)
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                ignoredFolders = if (isChecked) {
-                                    ignoredFolders + folder
-                                } else {
-                                    ignoredFolders - folder
+                            .padding(horizontal = 16.dp, vertical = 5.dp)
+                            .liquidGlass(
+                                shape = RoundedCornerShape(16.dp),
+                                style = LiquidGlassStyle.UltraThin,
+                                elevation = 2.dp,
+                                interactive = true,
+                                onClick = {
+                                    ignoredFolders = if (isChecked) {
+                                        ignoredFolders + folder
+                                    } else {
+                                        ignoredFolders - folder
+                                    }
                                 }
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = null,
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = Color(0xFFBB86FC),
-                                uncheckedColor = Color.Gray,
-                                checkmarkColor = Color.Black
                             )
-                        )
-                        Spacer(modifier = Modifier.size(16.dp))
-                        Column {
-                            val folderName = folder.substringAfterLast("/")
-                            Text(text = folderName, color = MaterialTheme.colorScheme.onBackground, fontSize = 16.sp)
-                            Text(text = folder, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 12.sp)
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = null,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = Color(0xFFBB86FC),
+                                    uncheckedColor = Color.Gray,
+                                    checkmarkColor = Color.Black
+                                )
+                            )
+                            Spacer(modifier = Modifier.size(16.dp))
+                            Column {
+                                val folderName = folder.substringAfterLast("/")
+                                Text(text = folderName, color = MaterialTheme.colorScheme.onBackground, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                Text(text = folder, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 12.sp)
+                            }
                         }
                     }
                 }
